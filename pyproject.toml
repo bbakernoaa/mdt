@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mvs"
+version = "0.1.0"
+description = "MONET Verification System"
+authors = [
+    {name = "NOAA NWS MDC", email = "example@noaa.gov"},
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "ruff",
+    "pyyaml",
+    "networkx",
+    "prefect>=2.0.0",
+    "prefect-dask",
+    "dask",
+    "dask-jobqueue",
+    "xarray",
+    "pandas",
+    "numpy",
+    # The repositories for monetio, monet, monet-stats, monet-plots
+    "monetio @ git+https://github.com/bbakernoaa/monetio.git@develop",
+    "monet @ git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements",
+    "monet-stats @ git+https://github.com/bbakernoaa/monet-stats.git@dev",
+    "monet-plots @ git+https://github.com/bbakernoaa/monet-plots.git",
+]
+
+[project.scripts]
+mvs = "mvs.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 148
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "D"]
+ignore = [
+    "D100",  # Missing docstring in public module (we will add them, but good to ignore if we miss one)
+    "D104",  # Missing docstring in public package
+    "D203",  # 1 blank line required before class docstring
+    "D212",  # Multi-line docstring summary should start at the first line
+    "D401",  # First line should be in imperative mood
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"

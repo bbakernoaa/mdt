@@ -1,0 +1,7 @@
+site_name: MONET Verification System (MVS)
+nav:
+  - Introduction: index.md
+  - Quick Start: quick_start.md
+  - User Guide: user_guide.md
+  - Architecture: architecture.md
+theme: readthedocs

@@ -1,0 +1,19 @@
+name: mvs
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - pip
+  - networkx
+  - pyyaml
+  - prefect>=2.0.0
+  - prefect-dask
+  - dask
+  - dask-jobqueue
+  - xarray
+  - pandas
+  - numpy
+  - esmpy  # Required by monet/xregrid for regridding and pairing
+  - xregrid # Required by monet
+  - pip:
+    - -e .
