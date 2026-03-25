@@ -13,10 +13,11 @@ dependencies:
   - xarray
   - pandas
   - numpy
+  - scipy
   - esmpy  # Required by monet/xregrid for regridding and pairing
   - pip:
     - git+https://github.com/bbakernoaa/monetio.git@develop
     - git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements
-    - git+https://github.com/bbakernoaa/monet-stats.git@dev
+    - git+https://github.com/bbakernoaa/monet-stats.git@dev#egg=monet-stats
     - git+https://github.com/bbakernoaa/monet-plots.git
     - -e .

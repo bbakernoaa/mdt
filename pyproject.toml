@@ -22,6 +22,7 @@ dependencies = [
     "xarray",
     "pandas",
     "numpy",
+    "scipy",
     "monetio @ git+https://github.com/bbakernoaa/monetio.git@develop",
     "monet @ git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements",
     "monet-stats @ git+https://github.com/bbakernoaa/monet-stats.git@dev",
