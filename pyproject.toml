@@ -22,7 +22,8 @@ dependencies = [
     "xarray",
     "pandas",
     "numpy",
-    # The repositories for monetio, monet, monet-stats, monet-plots
+    "pytest",
+    "pytest-mock",
     "monetio @ git+https://github.com/bbakernoaa/monetio.git@develop",
     "monet @ git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements",
     "monet-stats @ git+https://github.com/bbakernoaa/monet-stats.git@dev",

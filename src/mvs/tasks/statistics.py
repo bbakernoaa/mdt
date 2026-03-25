@@ -1,9 +1,18 @@
 import logging
+from typing import Dict, List, Union
+
+import pandas as pd
+import xarray as xr
 
 logger = logging.getLogger(__name__)
 
 
-def compute_statistics(name, metrics, input_data, kwargs):
+def compute_statistics(
+    name: str,
+    metrics: List[str],
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
+    kwargs: dict,
+) -> Dict[str, Union[xr.Dataset, xr.DataArray, pd.Series]]:
     """
     Computes statistics on paired data using monet-stats.
 
@@ -13,7 +22,7 @@ def compute_statistics(name, metrics, input_data, kwargs):
         The identifier for this statistics task.
     metrics : list of str
         A list of metric names to compute (e.g., ['rmse', 'bias', 'corr']).
-    input_data : pandas.DataFrame or xarray.Dataset
+    input_data : xarray.Dataset or xarray.DataArray or pandas.DataFrame
         The paired dataset containing both model and observational data.
     kwargs : dict
         Additional keyword arguments passed to the monet_stats metric functions
@@ -30,11 +39,15 @@ def compute_statistics(name, metrics, input_data, kwargs):
         If monet_stats is not installed.
     TypeError
         If a metric function fails due to an invalid signature or invalid keyword arguments.
+
+    Examples
+    --------
+    >>> stats = compute_statistics("my_stats", ["rmse", "bias"], paired_ds, {"obs_var": "obs", "mod_var": "mod"})
     """
     logger.info(f"Computing statistics '{name}' for metrics: {metrics}")
 
     try:
-        import monet_stats.stats as stats
+        import monet.util.stats as stats
 
         results = {}
         for metric in metrics:
@@ -48,6 +61,13 @@ def compute_statistics(name, metrics, input_data, kwargs):
                 # If input_data is a DataFrame with 'model' and 'obs', it fits perfectly
                 try:
                     result = metric_func(input_data, **kwargs)
+
+                    # Update history for provenance if the result is an xarray object
+                    if hasattr(result, "attrs"):
+                        history = result.attrs.get("history", "")
+                        new_history = f"Computed {metric} with metrics: {metrics} and params: {kwargs}"
+                        result.attrs["history"] = f"{history}\n{new_history}".strip()
+
                     results[metric] = result
                 except TypeError as e:
                     logger.error(f"Failed to compute {metric}: {e}")

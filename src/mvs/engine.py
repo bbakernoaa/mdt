@@ -204,9 +204,7 @@ class PrefectEngine:
                 job_script = job_script.replace(dummy_address, scheduler_address)
 
                 # Determine the submission command based on the mode (slurm -> sbatch, pbs -> qsub)
-                submit_cmd = (
-                    "sbatch" if "slurm" in mode or mode in ["hera", "jet", "orion", "hercules", "gaea", "ursa"] else "qsub"
-                )
+                submit_cmd = "sbatch" if "slurm" in mode or mode in ["hera", "jet", "orion", "hercules", "gaea", "ursa"] else "qsub"
                 if mode == "lsf":
                     submit_cmd = "bsub"
 

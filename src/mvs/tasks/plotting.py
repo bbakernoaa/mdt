@@ -47,9 +47,7 @@ def generate_plot(name, plot_type, input_data, kwargs):
             func = plot_module.plot
         else:
             # Look for a function containing the plot_type string
-            possible_funcs = [
-                attr for attr in dir(plot_module) if plot_type in attr.lower() and callable(getattr(plot_module, attr))
-            ]
+            possible_funcs = [attr for attr in dir(plot_module) if plot_type in attr.lower() and callable(getattr(plot_module, attr))]
             if possible_funcs:
                 func = getattr(plot_module, possible_funcs[0])
             else:
