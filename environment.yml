@@ -15,5 +15,6 @@ dependencies:
   - numpy
   - scipy
   - esmpy  # Required by monet/xregrid for regridding and pairing
+  - pip
   - pip:
     - -e .
