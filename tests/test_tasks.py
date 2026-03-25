@@ -3,9 +3,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from mvs.tasks.data import load_data
-from mvs.tasks.pairing import pair_data
-from mvs.tasks.statistics import compute_statistics
+from mdt.tasks.data import load_data
+from mdt.tasks.pairing import pair_data
+from mdt.tasks.statistics import compute_statistics
 
 
 def test_load_data_provenance(mocker):

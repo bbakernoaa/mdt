@@ -1,4 +1,4 @@
-"""Prefect execution engine and task wrappers for MVS."""
+"""Prefect execution engine and task wrappers for MDT."""
 
 import logging
 
@@ -8,11 +8,11 @@ import networkx as nx
 from prefect import flow, get_run_logger, task
 from prefect_dask.task_runners import DaskTaskRunner
 
-from mvs.hpc import HPCProfileFactory
-from mvs.tasks.data import load_data
-from mvs.tasks.pairing import pair_data
-from mvs.tasks.plotting import generate_plot
-from mvs.tasks.statistics import compute_statistics
+from mdt.hpc import HPCProfileFactory
+from mdt.tasks.data import load_data
+from mdt.tasks.pairing import pair_data
+from mdt.tasks.plotting import generate_plot
+from mdt.tasks.statistics import compute_statistics
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ class PrefectEngine:
             return dask.distributed.LocalCluster(n_workers=workers, resources={cluster_name.upper(): 1})
 
         # Multi-cluster or HPC mode:
-        # Create a central scheduler on the node where MVS is executed.
+        # Create a central scheduler on the node where MDT is executed.
         logger.info("Setting up central Dask Scheduler.")
         primary_cluster = dask.distributed.LocalCluster(
             n_workers=0,  # The local cluster is just the scheduler
@@ -233,10 +233,10 @@ class PrefectEngine:
         """
 
         # Define the Prefect flow inline to capture the instance variables
-        @flow(name="MVS Verification Workflow")
-        def mvs_flow():
+        @flow(name="MDT Verification Workflow")
+        def mdt_flow():
             logger = get_run_logger()
-            logger.info("Starting MVS Workflow...")
+            logger.info("Starting MDT Workflow...")
 
             # Dictionary to store the output futures of each task
             task_outputs = {}
@@ -324,6 +324,6 @@ class PrefectEngine:
         cluster = self._setup_dask_clusters()
 
         # Execute the Prefect flow, explicitly overriding the task_runner with our central cluster
-        results = mvs_flow.with_options(task_runner=DaskTaskRunner(address=cluster.scheduler_address))()
+        results = mdt_flow.with_options(task_runner=DaskTaskRunner(address=cluster.scheduler_address))()
 
         return results

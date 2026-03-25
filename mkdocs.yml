@@ -1,4 +1,4 @@
-site_name: MONET Verification System (MVS)
+site_name: Model Development Tool (MDT)
 nav:
   - Introduction: index.md
   - Quick Start: quick_start.md

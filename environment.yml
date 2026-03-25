@@ -1,4 +1,4 @@
-name: mvs
+name: mdt
 channels:
   - conda-forge
 dependencies:

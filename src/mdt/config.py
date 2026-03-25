@@ -1,4 +1,4 @@
-"""Module for parsing and validating MVS YAML configuration files."""
+"""Module for parsing and validating MDT YAML configuration files."""
 
 import logging
 import pathlib
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class ConfigParser:
     """
-    Parses and validates MVS YAML configuration files.
+    Parses and validates MDT YAML configuration files.
 
     Parameters
     ----------

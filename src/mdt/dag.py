@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 
 class DAGBuilder:
-    """Builds a NetworkX Directed Acyclic Graph based on MVS configuration."""
+    """Builds a NetworkX Directed Acyclic Graph based on MDT configuration."""
 
     def __init__(self, config):
         self.config = config
