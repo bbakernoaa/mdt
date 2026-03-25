@@ -30,6 +30,7 @@ class DAGBuilder:
         logger.info("Building task graph...")
         self._add_data_nodes()
         self._add_pairing_nodes()
+        self._add_combine_nodes()
         self._add_statistics_nodes()
         self._add_plotting_nodes()
 
@@ -107,6 +108,49 @@ class DAGBuilder:
             self.graph.add_edge(source_node, node_id)
             self.graph.add_edge(target_node, node_id)
 
+    def _add_combine_nodes(self):
+        """Adds nodes for combining multiple paired datasets."""
+        combine_cfg = self.config.combine
+        if not combine_cfg:
+            return
+
+        default_cluster = self.config.execution.get("default_cluster", "compute")
+
+        for name, details in combine_cfg.items():
+            node_id = f"combine_{name}"
+            sources = details.get("sources", [])
+            dim = details.get("dim", "model")
+
+            if not sources:
+                logger.warning(f"Combine task '{name}' has no sources. Skipping.")
+                continue
+
+            # Check if all sources exist (as paired nodes)
+            valid_sources = []
+            for source in sources:
+                pair_node_id = f"pair_{source}"
+                if pair_node_id in self.graph:
+                    valid_sources.append(pair_node_id)
+                else:
+                    logger.warning(f"Source '{source}' for combine task '{name}' not found. Skipping source.")
+
+            if not valid_sources:
+                logger.error(f"Combine task '{name}' has no valid sources. Skipping.")
+                continue
+
+            self.graph.add_node(
+                node_id,
+                task_type="combine_paired_data",
+                name=name,
+                sources=sources,  # List of original names, Engine uses this to look them up
+                dim=dim,
+                cluster=details.get("cluster", default_cluster),
+                kwargs=details.get("kwargs", {}),
+            )
+
+            for pair_node_id in valid_sources:
+                self.graph.add_edge(pair_node_id, node_id)
+
     def _add_statistics_nodes(self):
         """Adds nodes for computing statistics on paired data (from monet-stats)."""
         stats_cfg = self.config.statistics
@@ -125,7 +169,7 @@ class DAGBuilder:
 
             # We need to map 'input' to a node. It could be a 'pair_' node or a 'load_' node.
             # Usually stats are done on paired data, but we allow either for flexibility.
-            possible_nodes = [f"pair_{input_data}", f"load_{input_data}"]
+            possible_nodes = [f"combine_{input_data}", f"pair_{input_data}", f"load_{input_data}"]
             found_edge = False
             target_parent = None
             for p in possible_nodes:
@@ -165,8 +209,8 @@ class DAGBuilder:
                 logger.warning(f"Plot task '{name}' is missing 'input'. Skipping.")
                 continue
 
-            # Find the dependency. Could be stats, pair, or load
-            possible_nodes = [f"stats_{input_data}", f"pair_{input_data}", f"load_{input_data}"]
+            # Find the dependency. Could be stats, combine, pair, or load
+            possible_nodes = [f"stats_{input_data}", f"combine_{input_data}", f"pair_{input_data}", f"load_{input_data}"]
             found_edge = False
             target_parent = None
             for p in possible_nodes:

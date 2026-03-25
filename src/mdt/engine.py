@@ -10,7 +10,7 @@ from prefect_dask.task_runners import DaskTaskRunner
 
 from mdt.hpc import HPCProfileFactory
 from mdt.tasks.data import load_data
-from mdt.tasks.pairing import pair_data
+from mdt.tasks.pairing import pair_data, combine_paired_data
 from mdt.tasks.plotting import generate_plot
 from mdt.tasks.statistics import compute_statistics
 
@@ -68,6 +68,28 @@ def prefect_pair_data(name, method, source_data, target_data, kwargs):
     logger = get_run_logger()
     logger.info(f"Pairing data: {name} using {method}")
     return pair_data(name, method, source_data, target_data, kwargs)
+
+
+@task(name="Combine Paired Data")
+def prefect_combine_paired_data(paired_data, dim="model"):
+    """
+    Prefect wrapper for the combine_paired_data function.
+
+    Parameters
+    ----------
+    paired_data : dict
+        A dictionary mapping model names to paired data objects.
+    dim : str
+        The dimension to combine along.
+
+    Returns
+    -------
+    pandas.DataFrame or xarray.Dataset
+        The combined dataset.
+    """
+    logger = get_run_logger()
+    logger.info(f"Combining {len(paired_data)} paired datasets along '{dim}'")
+    return combine_paired_data(paired_data, dim=dim)
 
 
 @task(name="Compute Statistics")
@@ -292,6 +314,27 @@ class PrefectEngine:
                             source_data=task_outputs.get(source_node) if source_node else None,
                             target_data=task_outputs.get(target_node) if target_node else None,
                             kwargs=node_data["kwargs"],
+                        )
+                        task_outputs[node_id] = future
+
+                    elif task_type == "combine_paired_data":
+                        # Collect all inputs from predecessors (pairing tasks)
+                        paired_data_inputs = {}
+                        # Get the list of pairing names executed
+                        sources = node_data.get("sources", [])
+
+                        for source_pair_name in sources:
+                            # The node ID is constructed as pair_{name} in DAGBuilder
+                            pred_node_id = f"pair_{source_pair_name}"
+                            if pred_node_id in task_outputs:
+                                # Use the pairing name (or a label) as the key
+                                paired_data_inputs[source_pair_name] = task_outputs[pred_node_id]
+                            else:
+                                logger.warning(f"Predecessor {pred_node_id} not found for combine task {node_id}")
+
+                        future = prefect_combine_paired_data.submit(
+                            paired_data=paired_data_inputs,
+                            dim=node_data.get("dim", "model"),
                         )
                         task_outputs[node_id] = future
 

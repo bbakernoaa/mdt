@@ -3,5 +3,6 @@ nav:
   - Introduction: index.md
   - Quick Start: quick_start.md
   - User Guide: user_guide.md
+  - YAML Format: yaml_format.md
   - Architecture: architecture.md
 theme: readthedocs

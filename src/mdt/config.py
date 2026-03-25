@@ -56,6 +56,11 @@ class ConfigParser:
         return self.config.get("pairing", {})
 
     @property
+    def combine(self):
+        """dict: The 'combine' section of the configuration."""
+        return self.config.get("combine", {})
+
+    @property
     def statistics(self):
         """dict: The 'statistics' section of the configuration."""
         return self.config.get("statistics", {})

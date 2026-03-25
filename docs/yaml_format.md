@@ -8,6 +8,7 @@ MDT uses a structured YAML format to define verification workflows. Each section
 | :--- | :--- |
 | `data` | Defines model and observation datasets to load. |
 | `pairing` | Specifies how datasets are matched in time and space. |
+| `combine` | Merges multiple paired datasets for comparison. |
 | `statistics` | Lists the verification metrics to compute. |
 | `plots` | Configures visualizations. |
 | `execution` | Sets up the compute environment (e.g., local or HPC). |
@@ -50,7 +51,25 @@ pairing:
 
 ---
 
-## 3. `statistics` Section
+## 3. `combine` Section
+
+The `combine` section (optional) merges multiple paired datasets into a single dataset. This is useful for comparing multiple model runs against the same observations.
+
+*   **`sources`**: A list of pairing task names to combine.
+*   **`dim`**: The name of the new dimension to create (defaults to `model`).
+
+```yaml
+combine:
+  all_runs:
+    sources:
+      - pair_run1
+      - pair_run2
+    dim: model
+```
+
+---
+
+## 4. `statistics` Section
 
 Compute verification metrics on paired data.
 
@@ -70,7 +89,7 @@ statistics:
 
 ---
 
-## 4. `plots` Section
+## 5. `plots` Section
 
 Generate visualizations.
 
@@ -89,7 +108,7 @@ plots:
 
 ---
 
-## 5. `execution` Section
+## 6. `execution` Section
 
 Configure how and where tasks are executed.
 

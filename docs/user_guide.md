@@ -14,8 +14,9 @@ MDT breaks down verification into several key task types:
 2.  **Pairing:** Aligning model and observation data in time and space. This may involve:
     *   **Interpolation:** Extracting model values at specific observation point locations.
     *   **Regridding:** Mapping model output to a standard reference grid using `xregrid`.
-3.  **Statistics:** Computing standard verification metrics (RMSE, Bias, Correlation, etc.) using `monet-stats`.
-4.  **Plotting:** Visualizing the results using `monet-plots`.
+3.  **Combining (Optional):** Merging multiple paired datasets into a single object to facilitate inter-model comparisons.
+4.  **Statistics:** Computing standard verification metrics (RMSE, Bias, Correlation, etc.) using `monet-stats`.
+5.  **Plotting:** Visualizing the results using `monet-plots`.
 
 ### DAG Construction
 
