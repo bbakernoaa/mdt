@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment.yml
+          init-shell: bash
+          cache-environment: true
+          post-cleanup: 'all'
+
+      - name: Install dependencies and package
+        shell: bash -l {0}
+        run: |
+          micromamba run -n mvs pip install "monetio @ git+https://github.com/bbakernoaa/monetio.git@develop"
+          micromamba run -n mvs pip install "monet-stats @ git+https://github.com/bbakernoaa/monet-stats.git@dev"
+          micromamba run -n mvs pip install "monet-plots @ git+https://github.com/bbakernoaa/monet-plots.git"
+          micromamba run -n mvs pip install "monet @ git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements"
+          micromamba run -n mvs pip install "xregrid @ git+https://github.com/bbakernoaa/xregrid.git"
+          micromamba run -n mvs pip install "pytspack @ git+https://github.com/noaa-oar-arl/pytspack.git"
+          micromamba run -n mvs pip install pytest pytest-mock ruff
+          micromamba run -n mvs pip install -e .
+
+      - name: Run Ruff Check
+        shell: bash -l {0}
+        run: |
+          micromamba run -n mvs ruff check .
+
+      - name: Run Ruff Format Check
+        shell: bash -l {0}
+        run: |
+          micromamba run -n mvs ruff format . --check
+
+      - name: Run Tests
+        shell: bash -l {0}
+        run: |
+          micromamba run -n mvs pytest tests/
