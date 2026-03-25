@@ -69,11 +69,7 @@ def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
     # Look for the plotting function
     func = getattr(plot_module, "plot", None)
     if func is None:
-        possible_funcs = [
-            attr
-            for attr in dir(plot_module)
-            if plot_type in attr.lower() and callable(getattr(plot_module, attr))
-        ]
+        possible_funcs = [attr for attr in dir(plot_module) if plot_type in attr.lower() and callable(getattr(plot_module, attr))]
         if possible_funcs:
             func = getattr(plot_module, possible_funcs[0])
         else:

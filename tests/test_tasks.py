@@ -86,9 +86,7 @@ def test_compute_statistics_double_check(mocker):
     assert results_df["RMSE"] == 0.5
 
     # 2. Eager Run (Xarray NumPy)
-    ds_eager = xr.Dataset(
-        {"obs": (("x"), np.random.rand(10)), "mod": (("x"), np.random.rand(10))}
-    )
+    ds_eager = xr.Dataset({"obs": (("x"), np.random.rand(10)), "mod": (("x"), np.random.rand(10))})
     results_eager = compute_statistics("test_eager_stats", metrics, ds_eager, kwargs)
     assert float(results_eager["RMSE"]) == 0.5
     assert "Computed RMSE" in results_eager["RMSE"].attrs["history"]
