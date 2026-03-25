@@ -9,7 +9,7 @@ MDT uses a structured YAML format to define verification workflows. Each section
 | `data` | Defines model and observation datasets to load. |
 | `pairing` | Specifies how datasets are matched in time and space. |
 | `statistics` | Lists the verification metrics to compute. |
-| `plots` | Configures static or interactive visualizations. |
+| `plots` | Configures visualizations. |
 | `execution` | Sets up the compute environment (e.g., local or HPC). |
 
 ---
@@ -72,11 +72,10 @@ statistics:
 
 ## 4. `plots` Section
 
-Generate static or interactive visualizations.
+Generate visualizations.
 
 *   **`input`**: The name of a pairing, statistics, or data task.
 *   **`type`**: The type of plot (e.g., `spatial`, `scatter`, `timeseries`).
-*   **`track`**: `A` for Static (Matplotlib) or `B` for Interactive (HvPlot).
 *   **`kwargs`**: Arguments passed to the plotting function.
 
 ```yaml
@@ -84,7 +83,6 @@ plots:
   spatial_cmaq:
     input: "cmaq_airnow"
     type: "spatial"
-    track: "A"
     kwargs:
       savename: "cmaq_map.png"
 ```
@@ -162,13 +160,11 @@ plots:
   plot_cmaq:
     input: "pair_cmaq"
     type: "spatial"
-    track: "A"
     kwargs:
       savename: "cmaq_spatial.png"
   plot_wrfchem:
     input: "pair_wrfchem"
     type: "spatial"
-    track: "A"
     kwargs:
       savename: "wrfchem_spatial.png"
 ```

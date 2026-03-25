@@ -68,7 +68,6 @@ plots:
   spatial_eval:
     input: "eval_pair"
     type: "spatial"
-    track: "A"
     kwargs:
       savename: "cmaq_vs_aeronet.png"
 ```

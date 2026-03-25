@@ -1,7 +1,9 @@
 [project]
-name = "Model Development Tool (MDT)"
+site_name = "Model Development Tool (MDT)"
 description = "A Prefect-based verification system for Earth science models using the MONET ecosystem."
-theme = "material"
+
+[theme]
+name = "material"
 
 [navigation]
 items = [

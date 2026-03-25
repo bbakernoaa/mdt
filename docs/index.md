@@ -4,17 +4,13 @@ Welcome to the documentation for the **Model Development Tool (MDT)**. MDT is a 
 
 ## What is MDT?
 
-MDT is an orchestration layer built on **Prefect**, allowing you to define complex model-to-observation verification workflows using simple YAML configuration files. It automates the process of loading diverse datasets, pairing models with observations, computing performance statistics, and generating publication-quality visualizations.
+MDT is an orchestration layer built on **Prefect**, allowing you to define complex model-to-observation verification workflows using simple YAML configuration files. It automates the process of loading diverse datasets, pairing models with observations, computing performance statistics, and generating visualizations.
 
 ### Core Philosophy
 
 MDT is designed around several key principles:
 
 *   **Backend-Agnostic Processing:** We prioritize `xarray.DataArray` and `xarray.Dataset` objects to ensure compatibility with both Eager (NumPy) and Lazy (Dask) computation backends.
-*   **Aero Protocol:** MDT enforces "Double-Check" verification to ensure that lazy processing results match eager computations, preventing hidden compute overhead.
-*   **Two-Track Visualization:**
-    *   **Track A (Publication):** Static, high-fidelity plots using `matplotlib` and `cartopy`.
-    *   **Track B (Exploration):** Interactive, scalable visualizations using `hvplot` and `geoviews`.
 *   **HPC Compatibility:** Built-in support for Dask-Jobqueue allows MDT to scale seamlessly from a local workstation to large HPC clusters (e.g., SLURM, PBS).
 
 ## The MONET Ecosystem

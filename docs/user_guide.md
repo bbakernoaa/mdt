@@ -15,25 +15,11 @@ MDT breaks down verification into several key task types:
     *   **Interpolation:** Extracting model values at specific observation point locations.
     *   **Regridding:** Mapping model output to a standard reference grid using `xregrid`.
 3.  **Statistics:** Computing standard verification metrics (RMSE, Bias, Correlation, etc.) using `monet-stats`.
-4.  **Plotting:** Visualizing the results using the **Two-Track Rule**.
+4.  **Plotting:** Visualizing the results using `monet-plots`.
 
 ### DAG Construction
 
 When you run MDT with a configuration file, it automatically builds a dependency graph. For example, a `statistics` task that depends on a `pairing` task will wait for that pairing task to complete before starting. This allows MDT to optimize the execution order and run independent tasks in parallel.
-
-## The Two-Track Visualization Rule
-
-MDT handles visualization using two distinct tracks, allowing you to choose the best tool for your needs:
-
-### Track A: Static (Publication-Quality)
-*   **Engine:** Matplotlib + Cartopy.
-*   **Use Case:** Final figures for papers, reports, or static dashboards.
-*   **Key Feature:** High degree of control over map projections, transforms, and aesthetic details.
-
-### Track B: Interactive (Exploratory)
-*   **Engine:** HvPlot + GeoViews.
-*   **Use Case:** Data exploration, zooming into specific regions, and interacting with large datasets.
-*   **Key Feature:** Fast, interactive rendering of large grids using Datashader (mandatory `rasterize=True`).
 
 ## Scalability and HPC Support
 
