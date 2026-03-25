@@ -3,8 +3,26 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from mvs.tasks.data import load_data
 from mvs.tasks.pairing import pair_data
 from mvs.tasks.statistics import compute_statistics
+
+
+def test_load_data_provenance(mocker):
+    """Test load_data and ensure it adds provenance metadata."""
+    # Create dummy dataset
+    ds = xr.Dataset({"val": (("x"), [1, 2, 3])})
+
+    # Mock monetio.datasets.cmaq.open_dataset
+    mock_module = mocker.Mock()
+    mock_module.open_dataset.return_value = ds
+    mocker.patch("importlib.import_module", return_value=mock_module)
+
+    # Load data
+    res = load_data("test_data", "cmaq", {"fname": "dummy.nc"})
+
+    # Check history
+    assert "Loaded dataset 'test_data'" in res.attrs["history"]
 
 
 def test_pair_data_double_check(mocker):
