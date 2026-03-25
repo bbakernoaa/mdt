@@ -1,7 +1,6 @@
 import dask.array as da
 import numpy as np
 import pandas as pd
-import pytest
 import xarray as xr
 
 from mdt.tasks.data import load_data
