@@ -1,10 +1,14 @@
 import importlib
 import logging
+from typing import Union
+
+import pandas as pd
+import xarray as xr
 
 logger = logging.getLogger(__name__)
 
 
-def load_data(name, dataset_type, kwargs):
+def load_data(name: str, dataset_type: str, kwargs: dict) -> Union[xr.Dataset, pd.DataFrame]:
     """
     Dynamically loads data using monetio readers.
 
@@ -28,6 +32,10 @@ def load_data(name, dataset_type, kwargs):
     AttributeError
         If no standard open function (`open_dataset`, `open`, `open_mfdataset`)
         is found in the dynamically loaded module.
+
+    Examples
+    --------
+    >>> ds = load_data("my_cmaq", "cmaq", {"fname": "cmaq_file.nc"})
     """
     logger.info(f"Loading data '{name}' using monetio.readers.{dataset_type}")
 
@@ -42,7 +50,6 @@ def load_data(name, dataset_type, kwargs):
             reader_module = importlib.import_module(module_path)
 
         # Standard approach in monetio is usually an `open_dataset` or `open` function
-        # Let's check for standard functions
         if hasattr(reader_module, "open_dataset"):
             func = reader_module.open_dataset
         elif hasattr(reader_module, "open"):
@@ -50,10 +57,16 @@ def load_data(name, dataset_type, kwargs):
         elif hasattr(reader_module, "open_mfdataset"):
             func = reader_module.open_mfdataset
         else:
-            # Maybe the user specified a specific function in kwargs, or it's a class
             raise AttributeError(f"Could not find a standard open function in {module_path}")
 
         dataset = func(**kwargs)
+
+        # Provenance Tracking
+        if hasattr(dataset, "attrs"):
+            history = dataset.attrs.get("history", "")
+            new_history = f"Loaded dataset '{name}' of type '{dataset_type}' with params {kwargs}."
+            dataset.attrs["history"] = f"{history}\n{new_history}".strip()
+
         logger.info(f"Successfully loaded data '{name}'")
         return dataset
 

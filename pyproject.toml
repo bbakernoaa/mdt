@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mvs"
+name = "mdt"
 version = "0.1.0"
-description = "MONET Verification System"
+description = "Model Development Tool"
 authors = [
     {name = "NOAA NWS MDC", email = "example@noaa.gov"},
 ]
@@ -22,15 +22,12 @@ dependencies = [
     "xarray",
     "pandas",
     "numpy",
-    # The repositories for monetio, monet, monet-stats, monet-plots
-    "monetio @ git+https://github.com/bbakernoaa/monetio.git@develop",
-    "monet @ git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements",
-    "monet-stats @ git+https://github.com/bbakernoaa/monet-stats.git@dev",
-    "monet-plots @ git+https://github.com/bbakernoaa/monet-plots.git",
+    "pytest",
+    "pytest-mock",
 ]
 
 [project.scripts]
-mvs = "mvs.cli:main"
+mdt = "mdt.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

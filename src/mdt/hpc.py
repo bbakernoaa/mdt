@@ -9,8 +9,9 @@ logger = logging.getLogger(__name__)
 
 class HPCProfileFactory:
     """
-    Factory for generating Dask Jobqueue cluster instances tailored
-    to specific NOAA RDHPCS platforms (Hera, Jet, Orion, Hercules, Gaea, Ursa, WCOSS2).
+    Factory for generating Dask Jobqueue cluster instances.
+
+    Tailored to specific NOAA RDHPCS platforms (Hera, Jet, Orion, Hercules, Gaea, Ursa, WCOSS2).
     """
 
     @classmethod

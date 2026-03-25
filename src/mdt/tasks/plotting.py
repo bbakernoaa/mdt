@@ -1,12 +1,20 @@
 import importlib
 import logging
+from typing import Any, Dict, Union
 
 import matplotlib.pyplot as plt
+import pandas as pd
+import xarray as xr
 
 logger = logging.getLogger(__name__)
 
 
-def generate_plot(name, plot_type, input_data, kwargs):
+def generate_plot(
+    name: str,
+    plot_type: str,
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]],
+    kwargs: dict,
+) -> Any:
     """
     Generates visualizations using monet-plots.
 
@@ -16,7 +24,7 @@ def generate_plot(name, plot_type, input_data, kwargs):
         The identifier for this plotting task.
     plot_type : str
         The type of plot to generate (e.g., 'spatial', 'scatter', 'timeseries').
-    input_data : xarray.Dataset, pandas.DataFrame, or dict
+    input_data : xarray.Dataset, xarray.DataArray, pandas.DataFrame, or dict
         The data to plot (raw data, paired data, or computed statistics).
     kwargs : dict
         Additional keyword arguments to pass to the plotting function
@@ -33,6 +41,10 @@ def generate_plot(name, plot_type, input_data, kwargs):
         If monet-plots is not installed, or the requested plot module does not exist.
     AttributeError
         If an appropriate plotting function cannot be found within the module.
+
+    Examples
+    --------
+    >>> fig = generate_plot("my_plot", "spatial", ds, {"savename": "spatial.png"})
     """
     logger.info(f"Generating plot '{name}' of type: {plot_type}")
 
@@ -47,9 +59,7 @@ def generate_plot(name, plot_type, input_data, kwargs):
             func = plot_module.plot
         else:
             # Look for a function containing the plot_type string
-            possible_funcs = [
-                attr for attr in dir(plot_module) if plot_type in attr.lower() and callable(getattr(plot_module, attr))
-            ]
+            possible_funcs = [attr for attr in dir(plot_module) if plot_type in attr.lower() and callable(getattr(plot_module, attr))]
             if possible_funcs:
                 func = getattr(plot_module, possible_funcs[0])
             else:

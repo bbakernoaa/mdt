@@ -1,28 +1,28 @@
-"""Command-line interface for the MONET Verification System (MVS)."""
+"""Command-line interface for the Model Development Tool (MDT)."""
 
 import argparse
 import logging
 
-from mvs.config import load_config
-from mvs.dag import DAGBuilder
-from mvs.engine import PrefectEngine
+from mdt.config import load_config
+from mdt.dag import DAGBuilder
+from mdt.engine import PrefectEngine
 
 
 def setup_logging():
-    """Configures the standard logging format for MVS."""
+    """Configures the standard logging format for MDT."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 def main():
     """
-    Entry point for the MVS CLI application.
+    Entry point for the MDT CLI application.
 
     Parses command-line arguments and executes the requested subcommands.
     """
     setup_logging()
     logger = logging.getLogger(__name__)
 
-    parser = argparse.ArgumentParser(description="Monet Environmental Verification System (MVS)")
+    parser = argparse.ArgumentParser(description="Monet Environmental Verification System (MDT)")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # The 'run' command
@@ -52,7 +52,7 @@ def main():
             logger.info("Workflow execution completed successfully.")
 
         except Exception as e:
-            logger.error(f"Error executing MVS workflow: {e}")
+            logger.error(f"Error executing MDT workflow: {e}")
             raise
     else:
         parser.print_help()
