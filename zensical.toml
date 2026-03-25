@@ -1,0 +1,13 @@
+[project]
+name = "Model Development Tool (MDT)"
+description = "A Prefect-based verification system for Earth science models using the MONET ecosystem."
+theme = "material"
+
+[navigation]
+items = [
+    { label = "Introduction", path = "index.md" },
+    { label = "Quick Start", path = "quick_start.md" },
+    { label = "User Guide", path = "user_guide.md" },
+    { label = "YAML Format", path = "yaml_format.md" },
+    { label = "HPC Usage", path = "hpc_usage.md" }
+]
