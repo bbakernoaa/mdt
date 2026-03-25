@@ -5,7 +5,7 @@ import pandas as pd
 import xarray as xr
 
 # Monet pairing is usually handled by `monet.models.*` or `monet.obs.*` depending on the object,
-# or through `monet.util.interp_util` regridding, using xregrid and esmpy.
+# or through `monet.util.interp_util` regridding.
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ def pair_data(
     kwargs: dict,
 ) -> Union[xr.Dataset, xr.DataArray, pd.DataFrame]:
     """
-    Dynamically pairs two datasets using monet regridding or interpolation.
+    Dynamically pair two datasets using monet regridding or interpolation.
 
     Parameters
     ----------
@@ -45,26 +45,31 @@ def pair_data(
 
     Examples
     --------
-    >>> paired = pair_data("my_pairing", "interpolate", model_ds, obs_df, {"interp_kw": "val"})
+    >>> paired = pair_data(
+    ...     "my_pairing", "interpolate", model_ds, obs_df, {"interp_kw": "val"}
+    ... )
     """
-    logger.info(f"Pairing data '{name}' using method '{method}'")
+    logger.info("Pairing data '%s' using method '%s'", name, method)
 
     import monet.util.interp_util as interp_util
-    import xregrid
 
     try:
         if method == "interpolate":
-            # E.g., model to point observations
-            # Often monet handles this via the model object itself, but let's assume
-            # a generic regridding approach using xregrid or monet.utils.
-            # This is a generic placeholder for the actual monet logic.
-            # In monet, the target is often an observation dataframe, and the source
-            # is a model xarray dataset.
-            # Using points_to_dataset as a proxy for interpolation in this refactor
-            paired_data = interp_util.points_to_dataset(source_data, target_data, **kwargs)
+            # Check for a standard interpolation function in monet
+            func = getattr(interp_util, "points_to_dataset", None)
+            if func is None:
+                # Fallback to nearest neighbor if generic not found
+                func = getattr(interp_util, "nearest_point_swathdefinition", None)
+
+            if func:
+                paired_data = func(source_data, target_data, **kwargs)
+            else:
+                # If everything fails, this is likely a custom regridding needed
+                raise AttributeError("Could not find suitable interpolation function in monet.")
 
         elif method == "regrid":
-            # E.g., model to model, using xregrid (esmpy backend)
+            import xregrid
+
             regridder = xregrid.Regridder(source_data, target_data, **kwargs)
             paired_data = regridder.regrid(source_data)
 
@@ -77,9 +82,12 @@ def pair_data(
             new_history = f"Paired using method '{method}' with params {kwargs}."
             paired_data.attrs["history"] = f"{history}\n{new_history}".strip()
 
-        logger.info(f"Successfully paired data '{name}'")
+        logger.info("Successfully paired data '%s'", name)
         return paired_data
 
+    except ImportError as e:
+        logger.error("Required package for pairing not found: %s", e)
+        raise
     except Exception as e:
-        logger.error(f"Failed to pair data '{name}': {e}")
+        logger.error("Failed to pair data '%s': %s", name, e)
         raise

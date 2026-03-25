@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Union
 
 import pandas as pd
 import xarray as xr
@@ -11,10 +11,10 @@ def compute_statistics(
     name: str,
     metrics: List[str],
     input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
-    kwargs: dict,
+    kwargs: Dict[str, Any],
 ) -> Dict[str, Union[xr.Dataset, xr.DataArray, pd.Series]]:
     """
-    Computes statistics on paired data using monet-stats.
+    Compute statistics on paired data using monet-stats.
 
     Parameters
     ----------
@@ -42,45 +42,66 @@ def compute_statistics(
 
     Examples
     --------
-    >>> stats = compute_statistics("my_stats", ["rmse", "bias"], paired_ds, {"obs_var": "obs", "mod_var": "mod"})
+    >>> stats = compute_statistics(
+    ...     "my_stats", ["rmse", "bias"], paired_ds, {"obs_var": "obs", "mod_var": "mod"}
+    ... )
     """
-    logger.info(f"Computing statistics '{name}' for metrics: {metrics}")
+    logger.info("Computing statistics '%s' for metrics: %s", name, metrics)
 
     try:
-        import monet.util.stats as stats
+        import monet_stats
 
         results = {}
         for metric in metrics:
-            logger.debug(f"Computing metric: {metric}")
+            logger.debug("Computing metric: %s", metric)
 
-            # Ensure the metric exists in the monet_stats module
-            if hasattr(stats, metric):
-                metric_func = getattr(stats, metric)
+            # Ensure the metric exists in the monet_stats module (it might be top-level or in .stats)
+            found_metric = None
+            for attr in dir(monet_stats):
+                if attr.lower() == metric.lower():
+                    found_metric = getattr(monet_stats, attr)
+                    break
 
-                # Assume kwargs contains standard monet-stats args: df, model_var, obs_var
-                # If input_data is a DataFrame with 'model' and 'obs', it fits perfectly
+            if found_metric is None and hasattr(monet_stats, "stats"):
+                for attr in dir(monet_stats.stats):
+                    if attr.lower() == metric.lower():
+                        found_metric = getattr(monet_stats.stats, attr)
+                        break
+
+            if found_metric and callable(found_metric):
                 try:
-                    result = metric_func(input_data, **kwargs)
+                    # Attempt to handle both (data, **kwargs) and (obs, mod, **kwargs) styles
+                    # Many monet-stats functions expect (obs, mod) arrays.
+                    if isinstance(input_data, (xr.Dataset, pd.DataFrame)):
+                        obs_var = kwargs.get("obs_var", "obs")
+                        mod_var = kwargs.get("mod_var", "mod")
+                        obs = input_data[obs_var]
+                        mod = input_data[mod_var]
+                        # Remove obs_var and mod_var from kwargs for the call
+                        call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var"]}
+                        result = found_metric(obs, mod, **call_kwargs)
+                    else:
+                        result = found_metric(input_data, **kwargs)
 
                     # Update history for provenance if the result is an xarray object
-                    if hasattr(result, "attrs"):
+                    msg = f"Computed {metric} with metrics: {metrics} and params: {kwargs}"
+                    if hasattr(result, "attrs"):  # Xarray
                         history = result.attrs.get("history", "")
-                        new_history = f"Computed {metric} with metrics: {metrics} and params: {kwargs}"
-                        result.attrs["history"] = f"{history}\n{new_history}".strip()
+                        result.attrs["history"] = f"{history}\n{msg}".strip()
 
                     results[metric] = result
                 except TypeError as e:
-                    logger.error(f"Failed to compute {metric}: {e}")
+                    logger.error("Failed to compute %s: %s", metric, e)
                     raise
             else:
-                logger.warning(f"Metric '{metric}' not found in monet_stats.stats. Skipping.")
+                logger.warning("Metric '%s' not found in monet_stats. Skipping.", metric)
 
-        logger.info(f"Successfully computed statistics '{name}'")
+        logger.info("Successfully computed statistics '%s'", name)
         return results
 
     except ImportError:
         logger.error("monet-stats is not installed.")
         raise
     except Exception as e:
-        logger.error(f"Failed to compute statistics '{name}': {e}")
+        logger.error("Failed to compute statistics '%s': %s", name, e)
         raise
