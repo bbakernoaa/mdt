@@ -73,6 +73,33 @@ def pair_data(
             regridder = xregrid.Regridder(source_data, target_data, **kwargs)
             paired_data = regridder.regrid(source_data)
 
+            # If user wants to compare source vs target (e.g. model-to-model),
+            # merge the target dataset into the result.
+            if kwargs.get("merge_target", False):
+                # Consume these keys so they don't break regridding logic if passed there?
+                # Actually regridder uses kwargs. But we checked above.
+                # Assuming simple kwargs filtering or lenience in xregrid.
+                # Let's pop them if possible, but kwargs is passed to Regridder above.
+                pass
+
+            # Safe access
+            merge_flag = kwargs.get("merge_target", False)
+            if merge_flag:
+                suffix_source = kwargs.get("suffix_source", "_source")
+                suffix_target = kwargs.get("suffix_target", "_target")
+
+                # Rename source variables
+                renamed_source = paired_data.rename(
+                    {v: f"{v}{suffix_source}" for v in paired_data.data_vars}
+                )
+
+                # Rename target variables (make a copy to not affect original loaded data)
+                renamed_target = target_data.copy().rename(
+                    {v: f"{v}{suffix_target}" for v in target_data.data_vars}
+                )
+
+                paired_data = xr.merge([renamed_source, renamed_target])
+
         else:
             raise ValueError(f"Unknown pairing method '{method}'.")
 

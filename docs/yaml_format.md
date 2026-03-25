@@ -41,12 +41,25 @@ Pairing tasks align two datasets together.
 *   **`method`**: The pairing algorithm (`interpolate` or `regrid`).
 *   **`kwargs`**: Additional arguments for the pairing function.
 
+For model-to-model comparison using `regrid`, you can use `merge_target: true` to include the target model in the output.
+
 ```yaml
 pairing:
+  # Model vs Obs (Interpolation)
   cmaq_airnow:
     source: "cmaq_output"
     target: "airnow_obs"
     method: "interpolate"
+
+  # Model vs Model (Regridding)
+  cmaq_vs_wrf:
+    source: "cmaq_output"
+    target: "wrfchem_model"  # Target model defines the grid
+    method: "regrid"
+    kwargs:
+      merge_target: true
+      suffix_source: "_cmaq"
+      suffix_target: "_wrf"
 ```
 
 ---
