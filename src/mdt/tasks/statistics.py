@@ -131,7 +131,7 @@ def _execute_metric(
     kwargs: Dict[str, Any],
 ) -> Union[xr.Dataset, xr.DataArray, pd.Series]:
     """
-    Execute metric using apply_ufunc for Xarray objects to support Dask.
+    Execute metric from monet-stats with native Xarray/Dask support.
 
     Parameters
     ----------
@@ -161,31 +161,12 @@ def _execute_metric(
         if isinstance(data, xr.Dataset):
             obs = data[obs_var]
             mod = data[mod_var]
+            # Aero Protocol: monet-stats core metrics are already Xarray/Dask aware.
+            # Passing objects directly preserves the Dask graph without apply_ufunc overhead.
+            return func(obs, mod, **call_kwargs)
         else:
-            # If it's a DataArray, we assume it's one of the two and the other is passed in kwargs?
-            # For now, follow existing logic which handled Dataset specifically for obs/mod.
+            # Handle DataArray or other monet-stats compatible objects
             return func(data, **call_kwargs)
-
-        # Aero Protocol: Use apply_ufunc to handle Eager/Lazy backends
-        # Note: monet-stats functions often take (obs, mod, axis=None, **kwargs)
-        # and reduce along one or more axes.
-        # By default, we assume they reduce all shared dimensions if axis is not provided.
-        input_core_dims = [obs.dims, mod.dims]
-        output_core_dims = [[]]  # Assuming a scalar result per chunk/group
-
-        # If 'axis' is in kwargs, we might need more complex core dimension logic.
-        return xr.apply_ufunc(
-            func,
-            obs,
-            mod,
-            input_core_dims=input_core_dims,
-            output_core_dims=output_core_dims,
-            kwargs=call_kwargs,
-            dask="parallelized",
-            dask_gufunc_kwargs={"allow_rechunk": True},
-            output_dtypes=[obs.dtype],
-            keep_attrs=True,
-        )
 
     elif isinstance(data, pd.DataFrame):
         obs = data[obs_var]
