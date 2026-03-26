@@ -14,36 +14,39 @@ def compute_statistics(
     kwargs: Dict[str, Any],
 ) -> Dict[str, Union[xr.Dataset, xr.DataArray, pd.Series]]:
     """
-    Compute statistics on paired data using monet-stats.
+    Compute statistics on paired data using monet-stats with Dask support.
+
+    Leverages xarray.apply_ufunc with dask='parallelized' to ensure
+    computations remain lazy if inputs are Dask-backed.
 
     Parameters
     ----------
     name : str
         The identifier for this statistics task.
-    metrics : list of str
+    metrics : List[str]
         A list of metric names to compute (e.g., ['rmse', 'bias', 'corr']).
-    input_data : xarray.Dataset or xarray.DataArray or pandas.DataFrame
+    input_data : xr.Dataset or xr.DataArray or pd.DataFrame
         The paired dataset containing both model and observational data.
-    kwargs : dict
+    kwargs : Dict[str, Any]
         Additional keyword arguments passed to the monet_stats metric functions
         (e.g., `obs_var`, `mod_var`, or group-by parameters).
 
     Returns
     -------
-    dict
+    Dict[str, Union[xr.Dataset, xr.DataArray, pd.Series]]
         A dictionary mapping the computed metric names to their results.
 
     Raises
     ------
     ImportError
-        If monet_stats is not installed.
-    TypeError
-        If a metric function fails due to an invalid signature or invalid keyword arguments.
+        If monet-stats is not installed.
+    AttributeError
+        If a specified metric is not found in monet-stats.
 
     Examples
     --------
     >>> stats = compute_statistics(
-    ...     "my_stats", ["rmse", "bias"], paired_ds, {"obs_var": "obs", "mod_var": "mod"}
+    ...     "model_eval", ["rmse", "mae"], ds, {"obs_var": "obs", "mod_var": "mod"}
     ... )
     """
     logger.info("Computing statistics '%s' for metrics: %s", name, metrics)
@@ -52,56 +55,186 @@ def compute_statistics(
         import monet_stats
 
         results = {}
-        for metric in metrics:
-            logger.debug("Computing metric: %s", metric)
+        for metric_name in metrics:
+            logger.debug("Processing metric: %s", metric_name)
+            metric_func = _find_metric(monet_stats, metric_name)
 
-            # Ensure the metric exists in the monet_stats module (it might be top-level or in .stats)
-            found_metric = None
-            for attr in dir(monet_stats):
-                if attr.lower() == metric.lower():
-                    found_metric = getattr(monet_stats, attr)
-                    break
+            if not metric_func:
+                logger.warning("Metric '%s' not found in monet_stats. Skipping.", metric_name)
+                continue
 
-            if found_metric is None and hasattr(monet_stats, "stats"):
-                for attr in dir(monet_stats.stats):
-                    if attr.lower() == metric.lower():
-                        found_metric = getattr(monet_stats.stats, attr)
-                        break
+            try:
+                result = _execute_metric(input_data, metric_func, kwargs)
 
-            if found_metric and callable(found_metric):
-                try:
-                    # Attempt to handle both (data, **kwargs) and (obs, mod, **kwargs) styles
-                    # Many monet-stats functions expect (obs, mod) arrays.
-                    if isinstance(input_data, (xr.Dataset, pd.DataFrame)):
-                        obs_var = kwargs.get("obs_var", "obs")
-                        mod_var = kwargs.get("mod_var", "mod")
-                        obs = input_data[obs_var]
-                        mod = input_data[mod_var]
-                        # Remove obs_var and mod_var from kwargs for the call
-                        call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var"]}
-                        result = found_metric(obs, mod, **call_kwargs)
-                    else:
-                        result = found_metric(input_data, **kwargs)
+                # Provenance Tracking
+                msg = f"Computed {metric_name} with params: {kwargs}"
+                result = _update_provenance(result, msg)
 
-                    # Update history for provenance if the result is an xarray object
-                    msg = f"Computed {metric} with metrics: {metrics} and params: {kwargs}"
-                    if hasattr(result, "attrs"):  # Xarray
-                        history = result.attrs.get("history", "")
-                        result.attrs["history"] = f"{history}\n{msg}".strip()
-
-                    results[metric] = result
-                except TypeError as e:
-                    logger.error("Failed to compute %s: %s", metric, e)
-                    raise
-            else:
-                logger.warning("Metric '%s' not found in monet_stats. Skipping.", metric)
+                results[metric_name] = result
+            except Exception as e:
+                logger.error("Failed to compute %s: %s", metric_name, e)
+                raise
 
         logger.info("Successfully computed statistics '%s'", name)
         return results
 
     except ImportError:
-        logger.error("monet-stats is not installed.")
+        logger.error("monet-stats is not installed. Please install it to use this task.")
         raise
     except Exception as e:
-        logger.error("Failed to compute statistics '%s': %s", name, e)
+        logger.error("An unexpected error occurred during statistics computation: %s", e)
         raise
+
+
+def _find_metric(module: Any, metric_name: str) -> Any:
+    """
+    Robust discovery of metric functions in monet-stats.
+
+    Parameters
+    ----------
+    module : Any
+        The monet-stats module or submodule to search.
+    metric_name : str
+        The name of the metric to find (case-insensitive).
+
+    Returns
+    -------
+    Any
+        The callable metric function if found, otherwise None.
+
+    Examples
+    --------
+    >>> import monet_stats
+    >>> func = _find_metric(monet_stats, "RMSE")
+    """
+    # 1. Direct attribute access (case-sensitive)
+    if hasattr(module, metric_name):
+        return getattr(module, metric_name)
+
+    # 2. Case-insensitive search in top-level
+    for attr in dir(module):
+        if attr.lower() == metric_name.lower():
+            return getattr(module, attr)
+
+    # 3. Search in .stats submodule if it exists
+    if hasattr(module, "stats"):
+        for attr in dir(module.stats):
+            if attr.lower() == metric_name.lower():
+                return getattr(module.stats, attr)
+
+    return None
+
+
+def _execute_metric(
+    data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
+    func: Any,
+    kwargs: Dict[str, Any],
+) -> Union[xr.Dataset, xr.DataArray, pd.Series]:
+    """
+    Execute metric using apply_ufunc for Xarray objects to support Dask.
+
+    Parameters
+    ----------
+    data : xr.Dataset or xr.DataArray or pd.DataFrame
+        The input data to compute metrics on.
+    func : Any
+        The callable metric function from monet-stats.
+    kwargs : Dict[str, Any]
+        Additional keyword arguments for the metric function.
+
+    Returns
+    -------
+    xr.Dataset or xr.DataArray or pd.Series
+        The computed metric result.
+
+    Examples
+    --------
+    >>> res = _execute_metric(ds, monet_stats.rmse, {"obs_var": "obs", "mod_var": "mod"})
+    """
+    obs_var = kwargs.get("obs_var", "obs")
+    mod_var = kwargs.get("mod_var", "mod")
+
+    # Filter out MDT-specific keys before passing to monet-stats
+    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var"]}
+
+    if isinstance(data, (xr.Dataset, xr.DataArray)):
+        if isinstance(data, xr.Dataset):
+            obs = data[obs_var]
+            mod = data[mod_var]
+        else:
+            # If it's a DataArray, we assume it's one of the two and the other is passed in kwargs?
+            # For now, follow existing logic which handled Dataset specifically for obs/mod.
+            return func(data, **call_kwargs)
+
+        # Aero Protocol: Use apply_ufunc to handle Eager/Lazy backends
+        # Note: monet-stats functions often take (obs, mod, axis=None, **kwargs)
+        # and reduce along one or more axes.
+        # By default, we assume they reduce all shared dimensions if axis is not provided.
+        input_core_dims = [obs.dims, mod.dims]
+        output_core_dims = [[]]  # Assuming a scalar result per chunk/group
+
+        # If 'axis' is in kwargs, we might need more complex core dimension logic.
+        return xr.apply_ufunc(
+            func,
+            obs,
+            mod,
+            input_core_dims=input_core_dims,
+            output_core_dims=output_core_dims,
+            kwargs=call_kwargs,
+            dask="parallelized",
+            dask_gufunc_kwargs={"allow_rechunk": True},
+            output_dtypes=[obs.dtype],
+            keep_attrs=True,
+        )
+
+    elif isinstance(data, pd.DataFrame):
+        obs = data[obs_var]
+        mod = data[mod_var]
+        return func(obs, mod, **call_kwargs)
+
+    else:
+        return func(data, **call_kwargs)
+
+
+def _update_provenance(obj: Any, message: str) -> Any:
+    """
+    Standardized provenance update for Xarray and Pandas objects.
+
+    Parameters
+    ----------
+    obj : Any
+        The data object to update (Xarray or Pandas).
+    message : str
+        The provenance message to append to the history.
+
+    Returns
+    -------
+    Any
+        The updated object.
+
+    Examples
+    --------
+    >>> ds = _update_provenance(ds, "Updated with new statistics.")
+    """
+    if isinstance(obj, (xr.DataArray, xr.Dataset)):
+        history = obj.attrs.get("history", "")
+        obj.attrs["history"] = f"{history}\n{message}".strip()
+    elif isinstance(obj, (pd.Series, pd.DataFrame)):
+        # Use a simpler approach for Pandas to avoid nested dict issues
+        try:
+            current_attrs = getattr(obj, "attrs", {})
+            if current_attrs is None:
+                current_attrs = {}
+
+            history = current_attrs.get("history", "")
+            if isinstance(history, str):
+                current_attrs["history"] = (history + f"\n{message}").strip()
+            elif isinstance(history, dict):
+                mdt_hist = str(history.get("mdt_history", ""))
+                history["mdt_history"] = (mdt_hist + f"\n{message}").strip()
+                current_attrs["history"] = history
+
+            obj.attrs = current_attrs
+        except Exception:
+            pass
+    return obj
