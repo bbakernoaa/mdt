@@ -89,14 +89,10 @@ def pair_data(
                 suffix_target = kwargs.get("suffix_target", "_target")
 
                 # Rename source variables
-                renamed_source = paired_data.rename(
-                    {v: f"{v}{suffix_source}" for v in paired_data.data_vars}
-                )
+                renamed_source = paired_data.rename({v: f"{v}{suffix_source}" for v in paired_data.data_vars})
 
                 # Rename target variables (make a copy to not affect original loaded data)
-                renamed_target = target_data.copy().rename(
-                    {v: f"{v}{suffix_target}" for v in target_data.data_vars}
-                )
+                renamed_target = target_data.copy().rename({v: f"{v}{suffix_target}" for v in target_data.data_vars})
 
                 paired_data = xr.merge([renamed_source, renamed_target])
 
@@ -192,4 +188,3 @@ def combine_paired_data(
 
     else:
         raise TypeError(f"Unsupported data type for combination: {type(first_item)}")
-

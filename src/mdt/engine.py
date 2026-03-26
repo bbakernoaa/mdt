@@ -10,7 +10,7 @@ from prefect_dask.task_runners import DaskTaskRunner
 
 from mdt.hpc import HPCProfileFactory
 from mdt.tasks.data import load_data
-from mdt.tasks.pairing import pair_data, combine_paired_data
+from mdt.tasks.pairing import combine_paired_data, pair_data
 from mdt.tasks.plotting import generate_plot
 from mdt.tasks.statistics import compute_statistics
 
