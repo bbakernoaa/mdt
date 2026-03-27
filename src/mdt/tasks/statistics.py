@@ -163,30 +163,12 @@ def _execute_metric(
         if isinstance(data, xr.Dataset):
             obs = data[obs_var]
             mod = data[mod_var]
-
-            # Aero Protocol: Use apply_ufunc to ensure backend-agnostic execution.
-            # We treat all dimensions as core dimensions to support reduction metrics (like RMSE).
-            return xr.apply_ufunc(
-                func,
-                obs,
-                mod,
-                input_core_dims=[obs.dims, mod.dims],
-                kwargs=call_kwargs,
-                dask="parallelized",
-                output_dtypes=[float],
-                dask_gufunc_kwargs={"allow_rechunk": True},
-            )
+            # Aero Protocol: Trust Dask-enabled backends like monet-stats.
+            # Passing objects directly preserves the Dask graph.
+            return func(obs, mod, **call_kwargs)
         else:
-            # Handle DataArray: treat all dimensions as core dimensions.
-            return xr.apply_ufunc(
-                func,
-                data,
-                input_core_dims=[data.dims],
-                kwargs=call_kwargs,
-                dask="parallelized",
-                output_dtypes=[float],
-                dask_gufunc_kwargs={"allow_rechunk": True},
-            )
+            # Handle DataArray or other monet-stats compatible objects
+            return func(data, **call_kwargs)
 
     elif isinstance(data, pd.DataFrame):
         obs = data[obs_var]
