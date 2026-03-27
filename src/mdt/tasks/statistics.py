@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Union
 import pandas as pd
 import xarray as xr
 
+from mdt.utils import update_history
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +70,7 @@ def compute_statistics(
 
                 # Provenance Tracking
                 msg = f"Computed {metric_name} with params: {kwargs}"
-                result = _update_provenance(result, msg)
+                result = update_history(result, msg)
 
                 results[metric_name] = result
             except Exception as e:
@@ -161,12 +163,30 @@ def _execute_metric(
         if isinstance(data, xr.Dataset):
             obs = data[obs_var]
             mod = data[mod_var]
-            # Aero Protocol: monet-stats core metrics are already Xarray/Dask aware.
-            # Passing objects directly preserves the Dask graph without apply_ufunc overhead.
-            return func(obs, mod, **call_kwargs)
+
+            # Aero Protocol: Use apply_ufunc to ensure backend-agnostic execution.
+            # We treat all dimensions as core dimensions to support reduction metrics (like RMSE).
+            return xr.apply_ufunc(
+                func,
+                obs,
+                mod,
+                input_core_dims=[obs.dims, mod.dims],
+                kwargs=call_kwargs,
+                dask="parallelized",
+                output_dtypes=[float],
+                dask_gufunc_kwargs={"allow_rechunk": True},
+            )
         else:
-            # Handle DataArray or other monet-stats compatible objects
-            return func(data, **call_kwargs)
+            # Handle DataArray: treat all dimensions as core dimensions.
+            return xr.apply_ufunc(
+                func,
+                data,
+                input_core_dims=[data.dims],
+                kwargs=call_kwargs,
+                dask="parallelized",
+                output_dtypes=[float],
+                dask_gufunc_kwargs={"allow_rechunk": True},
+            )
 
     elif isinstance(data, pd.DataFrame):
         obs = data[obs_var]
@@ -175,47 +195,3 @@ def _execute_metric(
 
     else:
         return func(data, **call_kwargs)
-
-
-def _update_provenance(obj: Any, message: str) -> Any:
-    """
-    Standardized provenance update for Xarray and Pandas objects.
-
-    Parameters
-    ----------
-    obj : Any
-        The data object to update (Xarray or Pandas).
-    message : str
-        The provenance message to append to the history.
-
-    Returns
-    -------
-    Any
-        The updated object.
-
-    Examples
-    --------
-    >>> ds = _update_provenance(ds, "Updated with new statistics.")
-    """
-    if isinstance(obj, (xr.DataArray, xr.Dataset)):
-        history = obj.attrs.get("history", "")
-        obj.attrs["history"] = f"{history}\n{message}".strip()
-    elif isinstance(obj, (pd.Series, pd.DataFrame)):
-        # Use a simpler approach for Pandas to avoid nested dict issues
-        try:
-            current_attrs = getattr(obj, "attrs", {})
-            if current_attrs is None:
-                current_attrs = {}
-
-            history = current_attrs.get("history", "")
-            if isinstance(history, str):
-                current_attrs["history"] = (history + f"\n{message}").strip()
-            elif isinstance(history, dict):
-                mdt_hist = str(history.get("mdt_history", ""))
-                history["mdt_history"] = (mdt_hist + f"\n{message}").strip()
-                current_attrs["history"] = history
-
-            obj.attrs = current_attrs
-        except Exception:
-            pass
-    return obj

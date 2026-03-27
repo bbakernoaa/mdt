@@ -4,6 +4,8 @@ from typing import Union
 import pandas as pd
 import xarray as xr
 
+from mdt.utils import update_history
+
 # Monet pairing is usually handled by `monet.models.*` or `monet.obs.*` depending on the object,
 # or through `monet.util.interp_util` regridding.
 
@@ -100,10 +102,8 @@ def pair_data(
             raise ValueError(f"Unknown pairing method '{method}'.")
 
         # Provenance Tracking
-        if hasattr(paired_data, "attrs"):
-            history = paired_data.attrs.get("history", "")
-            new_history = f"Paired using method '{method}' with params {kwargs}."
-            paired_data.attrs["history"] = f"{history}\n{new_history}".strip()
+        msg = f"Paired using method '{method}' with params {kwargs}."
+        paired_data = update_history(paired_data, msg)
 
         logger.info("Successfully paired data '%s'", name)
         return paired_data

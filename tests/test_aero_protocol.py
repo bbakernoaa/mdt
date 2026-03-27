@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import xarray as xr
-
 from mdt.tasks.statistics import compute_statistics
 
 
@@ -66,11 +65,47 @@ def test_compute_statistics_pandas_provenance():
     def dummy_metric(obs, mod):
         return (mod - obs).abs().mean()
 
-    import mdt.tasks.statistics as stats_task
     # Inject dummy into find_metric via monkeypatch or similar if needed,
     # but here we can just test the _update_provenance helper directly or use a real metric.
 
     # Let's test _update_provenance directly for Pandas
     df.attrs = {"history": {"mdt_history": "Start"}}
-    updated_df = stats_task._update_provenance(df, "Computed Metric")
+    from mdt.utils import update_history
+
+    updated_df = update_history(df, "Computed Metric")
     assert "Computed Metric" in updated_df.attrs["history"]["mdt_history"]
+
+
+def test_compute_statistics_dumb_function(mocker):
+    """Verify that a NumPy-only metric works with Dask data via apply_ufunc."""
+
+    # 1. A metric function that ONLY accepts NumPy arrays (throws error on Dask)
+    def dumb_metric(obs, mod, **kwargs):
+        if not isinstance(obs, np.ndarray):
+            raise TypeError("I only speak NumPy!")
+        return (mod - obs).mean()
+
+    # 2. Setup Dask Data
+    size = 10
+    ds_lazy = xr.Dataset(
+        {
+            "obs": (("x"), np.random.rand(size)),
+            "mod": (("x"), np.random.rand(size)),
+        }
+    ).chunk({"x": 5})
+
+    # 3. Mock monet-stats
+    mocker.patch("mdt.tasks.statistics._find_metric", return_value=dumb_metric)
+
+    # 4. Execute (should NOT raise TypeError because of apply_ufunc dask='parallelized')
+    metrics = ["DUMB"]
+    kwargs = {"obs_var": "obs", "mod_var": "mod"}
+    results = compute_statistics("test_dumb", metrics, ds_lazy, kwargs)
+
+    # 5. Assertions
+    res = results["DUMB"]
+    assert hasattr(res.data, "dask"), "Result must be lazy"
+
+    # Should work when computed
+    val = res.compute()
+    assert isinstance(float(val), float)
