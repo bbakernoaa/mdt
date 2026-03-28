@@ -9,8 +9,8 @@ from mdt.tasks.statistics import compute_statistics
 
 
 def test_merra2_icap_aeronet_workflow(mocker):
-    """
-    Test the full comparison workflow for MERRA-2, ICAP-MME, and AERONET.
+    """Test the full comparison workflow for MERRA-2, ICAP-MME, and AERONET.
+
     This test uses real Reader classes from monetio (mocked for I/O).
     """
     # 1. Setup Mock Data
