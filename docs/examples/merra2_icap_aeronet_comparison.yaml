@@ -1,0 +1,60 @@
+# Comparison of MERRA-2 and ICAP-MME against AERONET observations
+
+data:
+  merra2_model:
+    type: "merra2"
+    kwargs:
+      dates: "2023-01-01"
+      product: "inst1_2d_asm_Nx"
+
+  icap_mme_model:
+    type: "icap_mme"
+    kwargs:
+      date: "2023-01-01"
+      product: "MMC"
+      data_var: "modeaod550"
+
+  aeronet_obs:
+    type: "aeronet"
+    kwargs:
+      dates: "2023-01-01"
+
+pairing:
+  pair_merra2:
+    source: "merra2_model"
+    target: "aeronet_obs"
+    method: "interpolate"
+
+  pair_icap:
+    source: "icap_mme_model"
+    target: "aeronet_obs"
+    method: "interpolate"
+
+combine:
+  comparison:
+    sources:
+      - pair_merra2
+      - pair_icap
+    dim: "model"
+
+statistics:
+  global_stats:
+    input: "comparison"
+    metrics: ["rmse", "mb", "corr"]
+    kwargs:
+      obs_var: "AOD_550nm"
+      mod_var: "AOD"  # Note: Variables might need renaming or mapping in real use
+
+plots:
+  spatial_map:
+    input: "comparison"
+    type: "spatial"
+    kwargs:
+      savename: "comparison_map.png"
+
+execution:
+  default_cluster: "local"
+  clusters:
+    local:
+      mode: "local"
+      workers: 4

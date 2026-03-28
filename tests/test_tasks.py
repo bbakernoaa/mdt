@@ -13,13 +13,11 @@ def test_load_data_provenance(mocker):
     # Create dummy dataset
     ds = xr.Dataset({"val": (("x"), [1, 2, 3])})
 
-    # Mock monetio.datasets.cmaq.open_dataset
-    mock_module = mocker.Mock()
-    mock_module.open_dataset.return_value = ds
-    mocker.patch("importlib.import_module", return_value=mock_module)
+    # Mock monetio.load
+    mocker.patch("monetio.load", return_value=ds)
 
     # Load data
-    res = load_data("test_data", "cmaq", {"fname": "dummy.nc"})
+    res = load_data("test_data", "cmaq", {"files": "dummy.nc"})
 
     # Check history
     assert "Loaded dataset 'test_data'" in res.attrs["history"]
