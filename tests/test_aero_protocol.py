@@ -66,11 +66,48 @@ def test_compute_statistics_pandas_provenance():
     def dummy_metric(obs, mod):
         return (mod - obs).abs().mean()
 
-    import mdt.tasks.statistics as stats_task
     # Inject dummy into find_metric via monkeypatch or similar if needed,
     # but here we can just test the _update_provenance helper directly or use a real metric.
 
     # Let's test _update_provenance directly for Pandas
     df.attrs = {"history": {"mdt_history": "Start"}}
-    updated_df = stats_task._update_provenance(df, "Computed Metric")
+    from mdt.utils import update_history
+
+    updated_df = update_history(df, "Computed Metric")
     assert "Computed Metric" in updated_df.attrs["history"]["mdt_history"]
+
+
+def test_compute_statistics_dask_enabled(mocker):
+    """Verify that a Dask-enabled metric works when called directly."""
+
+    # 1. A metric function that handles Dask natively
+    def dask_enabled_metric(obs, mod, **kwargs):
+        return (mod - obs).mean()
+
+    # 2. Setup Dask Data
+    size = 10
+    ds_lazy = xr.Dataset(
+        {
+            "obs": (("x"), np.random.rand(size)),
+            "mod": (("x"), np.random.rand(size)),
+        }
+    ).chunk({"x": 5})
+
+    # 3. Mock monet-stats
+    mocker.patch("mdt.tasks.statistics._find_metric", return_value=dask_enabled_metric)
+
+    # 4. Execute
+    metrics = ["DASK_ENABLED"]
+    kwargs = {"obs_var": "obs", "mod_var": "mod"}
+    results = compute_statistics("test_dask", metrics, ds_lazy, kwargs)
+
+    # 5. Assertions
+    res = results["DASK_ENABLED"]
+    # If the metric function preserves dask, then the result should have dask.
+    # Our dask_enabled_metric does preserve dask because (mod-obs).mean() on dask arrays is lazy.
+    if hasattr(res, "data"):
+        assert hasattr(res.data, "dask"), "Result must be lazy if the metric preserves it"
+
+    # Should work when computed
+    val = res.compute() if hasattr(res, "compute") else res
+    assert isinstance(float(val), float)

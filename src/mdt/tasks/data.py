@@ -5,6 +5,8 @@ from typing import Union
 import pandas as pd
 import xarray as xr
 
+from mdt.utils import update_history
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,10 +64,8 @@ def load_data(name: str, dataset_type: str, kwargs: dict) -> Union[xr.Dataset, p
         dataset = func(**kwargs)
 
         # Provenance Tracking
-        if hasattr(dataset, "attrs"):
-            history = dataset.attrs.get("history", "")
-            new_history = f"Loaded dataset '{name}' of type '{dataset_type}' with params {kwargs}."
-            dataset.attrs["history"] = f"{history}\n{new_history}".strip()
+        msg = f"Loaded dataset '{name}' of type '{dataset_type}' with params {kwargs}."
+        dataset = update_history(dataset, msg)
 
         logger.info(f"Successfully loaded data '{name}'")
         return dataset

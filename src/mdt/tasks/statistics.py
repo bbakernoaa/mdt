@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Union
 import pandas as pd
 import xarray as xr
 
+from mdt.utils import update_history
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +70,7 @@ def compute_statistics(
 
                 # Provenance Tracking
                 msg = f"Computed {metric_name} with params: {kwargs}"
-                result = _update_provenance(result, msg)
+                result = update_history(result, msg)
 
                 results[metric_name] = result
             except Exception as e:
@@ -161,8 +163,8 @@ def _execute_metric(
         if isinstance(data, xr.Dataset):
             obs = data[obs_var]
             mod = data[mod_var]
-            # Aero Protocol: monet-stats core metrics are already Xarray/Dask aware.
-            # Passing objects directly preserves the Dask graph without apply_ufunc overhead.
+            # Aero Protocol: Trust Dask-enabled backends like monet-stats.
+            # Passing objects directly preserves the Dask graph.
             return func(obs, mod, **call_kwargs)
         else:
             # Handle DataArray or other monet-stats compatible objects
@@ -175,47 +177,3 @@ def _execute_metric(
 
     else:
         return func(data, **call_kwargs)
-
-
-def _update_provenance(obj: Any, message: str) -> Any:
-    """
-    Standardized provenance update for Xarray and Pandas objects.
-
-    Parameters
-    ----------
-    obj : Any
-        The data object to update (Xarray or Pandas).
-    message : str
-        The provenance message to append to the history.
-
-    Returns
-    -------
-    Any
-        The updated object.
-
-    Examples
-    --------
-    >>> ds = _update_provenance(ds, "Updated with new statistics.")
-    """
-    if isinstance(obj, (xr.DataArray, xr.Dataset)):
-        history = obj.attrs.get("history", "")
-        obj.attrs["history"] = f"{history}\n{message}".strip()
-    elif isinstance(obj, (pd.Series, pd.DataFrame)):
-        # Use a simpler approach for Pandas to avoid nested dict issues
-        try:
-            current_attrs = getattr(obj, "attrs", {})
-            if current_attrs is None:
-                current_attrs = {}
-
-            history = current_attrs.get("history", "")
-            if isinstance(history, str):
-                current_attrs["history"] = (history + f"\n{message}").strip()
-            elif isinstance(history, dict):
-                mdt_hist = str(history.get("mdt_history", ""))
-                history["mdt_history"] = (mdt_hist + f"\n{message}").strip()
-                current_attrs["history"] = history
-
-            obj.attrs = current_attrs
-        except Exception:
-            pass
-    return obj
