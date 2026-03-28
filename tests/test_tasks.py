@@ -34,10 +34,12 @@ def test_pair_data_double_check(mocker):
     # Setup mock data (Dask)
     ds_lazy = ds_eager.chunk({"lat": 5, "lon": 5})
 
-    import monet.util.interp_util as iu
-
-    # Use mocker.patch with create=True if it doesn't exist
-    mocker.patch.object(iu, "points_to_dataset", side_effect=lambda src, tgt, **kwargs: src, create=True)
+    # Force has_xregrid to True and mock monet.pair to avoid esmpy dependency
+    mocker.patch("monet.accessors.base.has_xregrid", True)
+    mocker.patch("monet.util.resample.has_xregrid", True)
+    mocker.patch(
+        "monet.util.combinetool.pair", side_effect=lambda src, tgt, **kwargs: src
+    )
 
     # Eager run
     res_eager = pair_data("test_eager", "interpolate", ds_eager, ds_eager, {})

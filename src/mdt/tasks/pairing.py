@@ -20,20 +20,20 @@ def pair_data(
     kwargs: dict,
 ) -> Union[xr.Dataset, xr.DataArray, pd.DataFrame]:
     """
-    Dynamically pair two datasets using monet regridding or interpolation.
+    Dynamically pair two datasets using monet.
 
     Parameters
     ----------
     name : str
         The identifier for this pairing task.
     method : str
-        The regridding method to use (e.g., 'interpolate', 'regrid', 'point_to_grid').
-    source_data : xarray.Dataset or xarray.DataArray or pandas.DataFrame
+        Spatial interpolation method (e.g., 'nearest', 'bilinear', 'conservative').
+    source_data : xarray.Dataset or xarray.DataArray
         The source data object (typically a model).
     target_data : xarray.Dataset or xarray.DataArray or pandas.DataFrame
-        The target data object or grid (typically observations or a reference grid).
+        The target data object or grid (typically observations).
     kwargs : dict
-        Additional keyword arguments to pass to the underlying pairing function.
+        Additional keyword arguments for the pairing function (e.g., 'interp_time', 'suffix').
 
     Returns
     -------
@@ -42,64 +42,24 @@ def pair_data(
 
     Raises
     ------
-    ValueError
-        If an unknown pairing method is specified.
+    ImportError
+        If required pairing backend is not installed.
 
     Examples
     --------
     >>> paired = pair_data(
-    ...     "my_pairing", "interpolate", model_ds, obs_df, {"interp_kw": "val"}
+    ...     "my_pairing", "bilinear", model_ds, obs_df, {"interp_time": True}
     ... )
     """
     logger.info("Pairing data '%s' using method '%s'", name, method)
 
-    import monet.util.interp_util as interp_util
+    import monet
 
     try:
-        if method == "interpolate":
-            # Check for a standard interpolation function in monet
-            func = getattr(interp_util, "points_to_dataset", None)
-            if func is None:
-                # Fallback to nearest neighbor if generic not found
-                func = getattr(interp_util, "nearest_point_swathdefinition", None)
-
-            if func:
-                paired_data = func(source_data, target_data, **kwargs)
-            else:
-                # If everything fails, this is likely a custom regridding needed
-                raise AttributeError("Could not find suitable interpolation function in monet.")
-
-        elif method == "regrid":
-            import xregrid
-
-            regridder = xregrid.Regridder(source_data, target_data, **kwargs)
-            paired_data = regridder.regrid(source_data)
-
-            # If user wants to compare source vs target (e.g. model-to-model),
-            # merge the target dataset into the result.
-            if kwargs.get("merge_target", False):
-                # Consume these keys so they don't break regridding logic if passed there?
-                # Actually regridder uses kwargs. But we checked above.
-                # Assuming simple kwargs filtering or lenience in xregrid.
-                # Let's pop them if possible, but kwargs is passed to Regridder above.
-                pass
-
-            # Safe access
-            merge_flag = kwargs.get("merge_target", False)
-            if merge_flag:
-                suffix_source = kwargs.get("suffix_source", "_source")
-                suffix_target = kwargs.get("suffix_target", "_target")
-
-                # Rename source variables
-                renamed_source = paired_data.rename({v: f"{v}{suffix_source}" for v in paired_data.data_vars})
-
-                # Rename target variables (make a copy to not affect original loaded data)
-                renamed_target = target_data.copy().rename({v: f"{v}{suffix_target}" for v in target_data.data_vars})
-
-                paired_data = xr.merge([renamed_source, renamed_target])
-
-        else:
-            raise ValueError(f"Unknown pairing method '{method}'.")
+        # Use the unified monet.pair interface
+        # This handles both Xarray-to-Xarray and Xarray-to-DataFrame pairing,
+        # maintaining Aero Protocol (laziness).
+        paired_data = monet.util.combinetool.pair(source_data, target_data, method=method, **kwargs)
 
         # Provenance Tracking
         msg = f"Paired using method '{method}' with params {kwargs}."

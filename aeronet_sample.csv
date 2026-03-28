@@ -1,0 +1,8 @@
+AERONET Level 1.5 Data
+Site=TEST
+Latitude=40.0, Longitude=-105.0, Elevation=1500.0
+Version 3
+
+Date(dd:mm:yyyy),Time(hh:mm:ss),Site_Latitude(Degrees),Site_Longitude(Degrees),Site_Elevation(m),AOD_550nm
+01:01:2023,00:00:00,40.0,-105.0,1500.0,0.1
+01:01:2023,01:00:00,40.0,-105.0,1500.0,0.2
