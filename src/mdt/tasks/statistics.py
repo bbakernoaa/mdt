@@ -18,8 +18,9 @@ def compute_statistics(
     """
     Compute statistics on paired data using monet-stats with Dask support.
 
-    Leverages xarray.apply_ufunc with dask='parallelized' to ensure
-    computations remain lazy if inputs are Dask-backed.
+    Adheres to the Aero Protocol by calling metrics directly on Xarray
+    objects, allowing the backend (NumPy or Dask) to handle the data
+    without forcing re-chunking or memory-intensive operations.
 
     Parameters
     ----------
@@ -135,22 +136,28 @@ def _execute_metric(
     """
     Execute metric from monet-stats with native Xarray/Dask support.
 
+    Adheres to the Aero Protocol by calling metrics directly on Xarray
+    objects, allowing the backend (NumPy or Dask) to handle the data
+    without forcing re-chunking or memory-intensive operations.
+
     Parameters
     ----------
     data : xr.Dataset or xr.DataArray or pd.DataFrame
         The input data to compute metrics on.
     func : Any
-        The callable metric function from monet-stats.
+        The callable metric function from monet-stats (e.g., `monet_stats.rmse`).
     kwargs : Dict[str, Any]
-        Additional keyword arguments for the metric function.
+        Additional keyword arguments for the metric function, including
+        `obs_var` and `mod_var` for Dataset inputs.
 
     Returns
     -------
     xr.Dataset or xr.DataArray or pd.Series
-        The computed metric result.
+        The computed metric result, preserving the backend (NumPy or Dask).
 
     Examples
     --------
+    >>> import monet_stats
     >>> res = _execute_metric(ds, monet_stats.rmse, {"obs_var": "obs", "mod_var": "mod"})
     """
     obs_var = kwargs.get("obs_var", "obs")
@@ -163,8 +170,8 @@ def _execute_metric(
         if isinstance(data, xr.Dataset):
             obs = data[obs_var]
             mod = data[mod_var]
-            # Aero Protocol: Trust Dask-enabled backends like monet-stats.
-            # Passing objects directly preserves the Dask graph.
+            # Aero Protocol: Call directly on DataArrays to preserve the backend.
+            # Libraries like monet-stats are expected to be backend-agnostic.
             return func(obs, mod, **call_kwargs)
         else:
             # Handle DataArray or other monet-stats compatible objects

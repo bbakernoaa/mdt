@@ -21,16 +21,16 @@ def update_history(obj: Any, message: str) -> Any:
         The updated object with the history attribute modified.
     """
     if isinstance(obj, (xr.DataArray, xr.Dataset)):
-        if obj.attrs is None:
+        if getattr(obj, "attrs", None) is None:
             obj.attrs = {}
         history = obj.attrs.get("history", "")
         obj.attrs["history"] = f"{history}\n{message}".strip()
     elif isinstance(obj, (pd.Series, pd.DataFrame)):
         try:
-            current_attrs = getattr(obj, "attrs", {})
-            if current_attrs is None:
-                current_attrs = {}
+            if getattr(obj, "attrs", None) is None:
+                obj.attrs = {}
 
+            current_attrs = obj.attrs
             history = current_attrs.get("history", "")
             if isinstance(history, str):
                 current_attrs["history"] = (history + f"\n{message}").strip()
