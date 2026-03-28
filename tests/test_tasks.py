@@ -37,9 +37,7 @@ def test_pair_data_double_check(mocker):
     # Force has_xregrid to True and mock monet.pair to avoid esmpy dependency
     mocker.patch("monet.accessors.base.has_xregrid", True)
     mocker.patch("monet.util.resample.has_xregrid", True)
-    mocker.patch(
-        "monet.util.combinetool.pair", side_effect=lambda src, tgt, **kwargs: src
-    )
+    mocker.patch("monet.util.combinetool.pair", side_effect=lambda src, tgt, **kwargs: src)
 
     # Eager run
     res_eager = pair_data("test_eager", "interpolate", ds_eager, ds_eager, {})
