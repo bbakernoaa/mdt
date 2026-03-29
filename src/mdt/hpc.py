@@ -77,6 +77,14 @@ class HPCProfileFactory:
             "job_extra_directives": ["--qos=batch"],
             "interface": "ib0",  # Example interface, might need adjustment
         }
+
+        # If this is designated as a service node via MDT Engine
+        if user_kwargs.get("queue") == "service" or user_kwargs.get("partition") == "service" or user_kwargs.get("cluster_name") == "service":
+            defaults["job_extra_directives"] = ["--qos=batch", "--partition=service"]
+
+        # Remove custom internal arguments before passing to Dask
+        user_kwargs.pop("cluster_name", None)
+
         # User overrides take precedence
         defaults.update(user_kwargs)
         return SLURMCluster(**defaults)
@@ -90,6 +98,14 @@ class HPCProfileFactory:
             "processes": 1,
             "walltime": "01:00:00",
         }
+
+        # If this is designated as a service node via MDT Engine
+        if user_kwargs.get("queue") == "service" or user_kwargs.get("partition") == "service" or user_kwargs.get("cluster_name") == "service":
+            defaults["job_extra_directives"] = ["--partition=service"]
+
+        # Remove custom internal arguments before passing to Dask
+        user_kwargs.pop("cluster_name", None)
+
         defaults.update(user_kwargs)
         return SLURMCluster(**defaults)
 
@@ -102,6 +118,14 @@ class HPCProfileFactory:
             "processes": 1,
             "walltime": "01:00:00",
         }
+
+        # If this is designated as a service node via MDT Engine
+        if user_kwargs.get("queue") == "service" or user_kwargs.get("partition") == "service" or user_kwargs.get("cluster_name") == "service":
+            defaults["job_extra_directives"] = ["--partition=service"]
+
+        # Remove custom internal arguments before passing to Dask
+        user_kwargs.pop("cluster_name", None)
+
         defaults.update(user_kwargs)
         return SLURMCluster(**defaults)
 
@@ -114,6 +138,17 @@ class HPCProfileFactory:
             "processes": 1,
             "walltime": "01:00:00",
         }
+
+        # If this is designated as a service node via MDT Engine
+        if user_kwargs.get("queue") == "service" or user_kwargs.get("partition") == "service" or user_kwargs.get("cluster_name") == "service":
+            defaults["job_extra_directives"] = ["--partition=u1-service"]
+            # Ursa service nodes may have core/memory constraints, adjust defaults
+            defaults["cores"] = min(defaults["cores"], 32)
+            defaults["memory"] = "120GB"
+
+        # Remove custom internal arguments before passing to Dask
+        user_kwargs.pop("cluster_name", None)
+
         defaults.update(user_kwargs)
         return SLURMCluster(**defaults)
 
@@ -126,6 +161,14 @@ class HPCProfileFactory:
             "processes": 1,
             "walltime": "01:00:00",
         }
+
+        # If this is designated as a service node via MDT Engine
+        if user_kwargs.get("queue") == "service" or user_kwargs.get("partition") == "service" or user_kwargs.get("cluster_name") == "service":
+            defaults["job_extra_directives"] = ["--partition=service"]
+
+        # Remove custom internal arguments before passing to Dask
+        user_kwargs.pop("cluster_name", None)
+
         defaults.update(user_kwargs)
         return SLURMCluster(**defaults)
 
@@ -138,6 +181,14 @@ class HPCProfileFactory:
             "processes": 1,
             "walltime": "01:00:00",
         }
+
+        # If this is designated as a service node via MDT Engine
+        if user_kwargs.get("queue") == "service" or user_kwargs.get("partition") == "service" or user_kwargs.get("cluster_name") == "service":
+            defaults["job_extra_directives"] = ["--partition=service"]
+
+        # Remove custom internal arguments before passing to Dask
+        user_kwargs.pop("cluster_name", None)
+
         defaults.update(user_kwargs)
         return SLURMCluster(**defaults)
 
@@ -152,5 +203,14 @@ class HPCProfileFactory:
             "walltime": "01:00:00",
             "queue": "dev",
         }
+
+        # If this is designated as a service node via MDT Engine
+        if user_kwargs.get("queue") == "service" or user_kwargs.get("partition") == "service" or user_kwargs.get("cluster_name") == "service":
+            # For PBS/WCOSS2 we just change the queue name
+            defaults["queue"] = "service"
+
+        # Remove custom internal arguments before passing to Dask
+        user_kwargs.pop("cluster_name", None)
+
         defaults.update(user_kwargs)
         return PBSCluster(**defaults)

@@ -189,6 +189,10 @@ class PrefectEngine:
             workers = cfg.get("workers", 1)
             kwargs = cfg.get("cluster_kwargs", {})
 
+            # Let the HPCProfileFactory know the logical name of this cluster (e.g. 'service')
+            # so it can choose appropriate partitions.
+            kwargs["cluster_name"] = cluster_name
+
             # Assign resource annotations so Dask knows which workers belong to which cluster.
             res_name = cluster_name.upper()
 
