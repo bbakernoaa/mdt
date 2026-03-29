@@ -50,8 +50,8 @@ class DAGBuilder:
 
         # Data retrieval typically requires external internet access.
         # Compute nodes on HPC environments (e.g. NOAA RDHPCS) typically block this.
-        # Therefore, data tasks should default to a 'local' cluster representing the service node.
-        default_cluster = "local"
+        # Therefore, data tasks should default to a 'service' cluster representing the service node.
+        default_cluster = "service"
 
         for name, details in data_cfg.items():
             node_id = f"load_{name}"

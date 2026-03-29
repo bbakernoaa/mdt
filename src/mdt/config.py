@@ -94,9 +94,20 @@ class ConfigParser:
         if "clusters" in exec_cfg and "default_cluster" not in exec_cfg:
             exec_cfg["default_cluster"] = list(exec_cfg["clusters"].keys())[0]
 
-        # Ensure a local cluster is always defined for service-node tasks (like data download)
-        if "local" not in exec_cfg.get("clusters", {}):
-            exec_cfg.setdefault("clusters", {})["local"] = {"mode": "local", "workers": 1}
+        # Ensure a service cluster is always defined for service-node tasks (like data download)
+        if "service" not in exec_cfg.get("clusters", {}):
+            # Attempt to derive the service mode from the default compute cluster's mode
+            compute_mode = "local"
+            if "clusters" in exec_cfg and exec_cfg["default_cluster"] in exec_cfg["clusters"]:
+                compute_mode = exec_cfg["clusters"][exec_cfg["default_cluster"]].get("mode", "local")
+
+            # If the primary execution is an HPC scheduler, we should map the service cluster to it
+            if compute_mode != "local":
+                service_mode = compute_mode
+            else:
+                service_mode = "local"
+
+            exec_cfg.setdefault("clusters", {})["service"] = {"mode": service_mode, "workers": 1}
 
         return exec_cfg
 

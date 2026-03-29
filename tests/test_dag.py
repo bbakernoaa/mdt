@@ -37,15 +37,15 @@ def test_dag_builder_kerchunk_kwargs():
 
 
 def test_dag_builder_cluster_defaults():
-    """Test that DAGBuilder assigns 'local' to data nodes and default_cluster to others."""
+    """Test that DAGBuilder assigns 'service' to data nodes and default_cluster to others."""
     config = DummyConfig(data_dict={"test_data": {"type": "cmaq"}, "test_target": {"type": "aeronet"}})
     config.pairing = {"my_pairing": {"source": "test_data", "target": "test_target"}}
     builder = DAGBuilder(config)
     dag = builder.build()
 
-    # Data nodes should default to local cluster
-    assert dag.nodes["load_test_data"]["cluster"] == "local"
-    assert dag.nodes["load_test_target"]["cluster"] == "local"
+    # Data nodes should default to service cluster
+    assert dag.nodes["load_test_data"]["cluster"] == "service"
+    assert dag.nodes["load_test_target"]["cluster"] == "service"
 
     # Pairing nodes should default to the execution block's default cluster
     assert dag.nodes["pair_my_pairing"]["cluster"] == "compute"
