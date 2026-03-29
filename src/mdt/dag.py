@@ -58,13 +58,19 @@ class DAGBuilder:
                 logger.warning(f"Data source '{name}' is missing 'type'. Skipping.")
                 continue
 
+            kwargs = details.get("kwargs") or {}
+            if "use_kerchunk" in details:
+                kwargs["use_kerchunk"] = details.get("use_kerchunk")
+            if "kerchunk_file" in details:
+                kwargs["kerchunk_file"] = details.get("kerchunk_file")
+
             self.graph.add_node(
                 node_id,
                 task_type="load_data",
                 name=name,
                 dataset_type=dataset_type,
                 cluster=details.get("cluster", default_cluster),
-                kwargs=details.get("kwargs", {}),
+                kwargs=kwargs,
             )
 
     def _add_pairing_nodes(self):
