@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 import xarray as xr
 
 from mdt.tasks.statistics import compute_statistics
@@ -13,7 +12,6 @@ def test_compute_statistics_weighted_double_check(mocker):
     and Lazy (Dask) backends and preserve laziness.
     """
     # 1. Setup Eager Data (NumPy)
-    size = 100
     lat = np.linspace(-90, 90, 10)
     lon = np.linspace(-180, 180, 10)
 
@@ -34,20 +32,17 @@ def test_compute_statistics_weighted_double_check(mocker):
     # 2. Setup Lazy Data (Dask)
     ds_lazy = ds_eager.chunk({"lat": 5, "lon": 5})
 
-    # 3. Setup real metrics from monet_stats
-    import monet_stats
-
-    # 4. Execute Eager (NumPy)
+    # 3. Execute Eager (NumPy)
     metrics = ["MB"]
     kwargs = {"obs_var": "obs", "mod_var": "mod", "weights": "w", "dim": ("lat", "lon")}
     results_eager = compute_statistics("test_eager", metrics, ds_eager, kwargs)
     res_eager = results_eager["MB"]
 
-    # 5. Execute Lazy (Dask)
+    # 4. Execute Lazy (Dask)
     results_lazy = compute_statistics("test_lazy", metrics, ds_lazy, kwargs)
     res_lazy = results_lazy["MB"]
 
-    # 6. Assertions
+    # 5. Assertions
     # Verify laziness (Aero Protocol Rule 1.2)
     assert hasattr(res_lazy.data, "dask"), "Result should be Dask-backed for lazy input"
 
@@ -58,5 +53,8 @@ def test_compute_statistics_weighted_double_check(mocker):
     diff = ds_eager.mod - ds_eager.obs
     expected = (diff * ds_eager.w).sum() / ds_eager.w.where(diff.notnull()).sum()
     np.testing.assert_allclose(res_eager.values, expected.values)
+
+    # Provenance check
+    assert "Computed MB" in res_eager.attrs["history"]
 
     print("\n✅ Aero Protocol Double-Check Passed: Weighted Eager == Lazy (Dask)")
