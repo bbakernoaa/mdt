@@ -1,8 +1,9 @@
-import pytest
-import networkx as nx
 from mdt.dag import DAGBuilder
 
+
 class DummyConfig:
+    """Mock MDT config object to inject mock dicts for the DAG builder testing."""
+
     def __init__(self, data_dict):
         self.data = data_dict
         self.execution = {"default_cluster": "compute"}
@@ -11,6 +12,7 @@ class DummyConfig:
         self.statistics = {}
         self.plots = {}
 
+
 def test_dag_builder_kerchunk_kwargs():
     """Test that DAGBuilder correctly merges use_kerchunk into kwargs."""
     config_dict = {
@@ -18,7 +20,7 @@ def test_dag_builder_kerchunk_kwargs():
             "type": "cmaq",
             "use_kerchunk": True,
             "kerchunk_file": "ref.json",
-            "kwargs": {"files": "dummy.nc"}
+            "kwargs": {"files": "dummy.nc"},
         }
     }
     config = DummyConfig(config_dict)
@@ -33,12 +35,13 @@ def test_dag_builder_kerchunk_kwargs():
     assert node["kwargs"]["kerchunk_file"] == "ref.json"
     assert node["kwargs"]["files"] == "dummy.nc"
 
+
 def test_dag_builder_kerchunk_no_kwargs():
     """Test that DAGBuilder handles missing kwargs correctly with kerchunk."""
     config_dict = {
         "test_data": {
             "type": "cmaq",
-            "use_kerchunk": True
+            "use_kerchunk": True,
         }
     }
     config = DummyConfig(config_dict)
@@ -51,13 +54,14 @@ def test_dag_builder_kerchunk_no_kwargs():
     assert node["kwargs"]["use_kerchunk"] is True
     assert "kerchunk_file" not in node["kwargs"]
 
+
 def test_dag_builder_kerchunk_none_kwargs():
     """Test that DAGBuilder handles kwargs=None correctly with kerchunk."""
     config_dict = {
         "test_data": {
             "type": "cmaq",
             "use_kerchunk": True,
-            "kwargs": None
+            "kwargs": None,
         }
     }
     config = DummyConfig(config_dict)
