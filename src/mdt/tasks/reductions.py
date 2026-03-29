@@ -1,7 +1,7 @@
 import logging
 from typing import Union
 
-import numpy as np
+import monet_stats
 import xarray as xr
 
 from mdt.utils import update_history
@@ -15,11 +15,10 @@ def spatial_mean(
     lat_dim: str = "lat",
 ) -> Union[xr.DataArray, xr.Dataset]:
     """
-    Compute the area-weighted spatial mean using cosine of latitude.
+    Compute the area-weighted spatial mean using monet-stats.
 
-    This function is backend-agnostic and adheres to the Aero Protocol:
-    it works with both NumPy-backed and Dask-backed Xarray objects without
-    forcing computation.
+    This function delegates to `monet_stats.weighted_spatial_mean`, which
+    implements the Aero Protocol (supporting both NumPy and Dask backends).
 
     Parameters
     ----------
@@ -37,22 +36,18 @@ def spatial_mean(
 
     Examples
     --------
-    >>> ds = xr.tutorial.open_dataset("air_temperature")
-    >>> sm = spatial_mean(ds)
+    >>> import xarray as xr
+    >>> da = xr.DataArray([[1, 2], [3, 4]], coords={"lat": [0, 1], "lon": [0, 1]}, dims=("lat", "lon"))
+    >>> sm = spatial_mean(da)
     """
-    logger.info(f"Computing area-weighted spatial mean over dimensions ({lat_dim}, {lon_dim})")
+    logger.info("Computing area-weighted spatial mean via monet_stats.")
 
-    # 1. Calculate weights based on cosine of latitude
-    # Xarray handles the broadcasting of weights automatically.
-    weights = np.cos(np.deg2rad(obj[lat_dim]))
-    weights.name = "weights"
+    # Delegate to monet-stats for robust implementation
+    # It handles cell_area detection, cosine weighting, and Aero Protocol compliance.
+    result = monet_stats.weighted_spatial_mean(obj, lat_dim=lat_dim, lon_dim=lon_dim)
 
-    # 2. Apply weighting and compute mean
-    # This remains lazy if 'obj' is Dask-backed.
-    result = obj.weighted(weights).mean(dim=(lat_dim, lon_dim))
-
-    # 3. Provenance Tracking
-    msg = f"Computed area-weighted spatial mean over {lat_dim} and {lon_dim}."
+    # Provenance Tracking
+    msg = f"Computed area-weighted spatial mean over {lat_dim} and {lon_dim} via monet-stats."
     result = update_history(result, msg)
 
     logger.info("Successfully computed spatial mean.")

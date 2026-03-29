@@ -163,18 +163,50 @@ def _execute_metric(
     obs_var = kwargs.get("obs_var", "obs")
     mod_var = kwargs.get("mod_var", "mod")
 
+    import monet_stats
+
     # Filter out MDT-specific keys before passing to monet-stats
-    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var"]}
+    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights"]}
+    weights = kwargs.get("weights")
 
     if isinstance(data, (xr.Dataset, xr.DataArray)):
         if isinstance(data, xr.Dataset):
             obs = data[obs_var]
             mod = data[mod_var]
-            # Aero Protocol: Call directly on DataArrays to preserve the backend.
-            # Libraries like monet-stats are expected to be backend-agnostic.
+
+            # Aero Protocol: Push weighted statistics through monet-stats.
+            if weights is not None:
+                if isinstance(weights, str) and weights in data:
+                    w = data[weights]
+                else:
+                    w = weights
+
+                # Handle weighted bias/error metrics via monet-stats.weighted_spatial_mean
+                metric_name = getattr(func, "__name__", "").upper()
+
+                # Adapt call_kwargs for weighted_spatial_mean
+                w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
+                if "dim" in call_kwargs:
+                    dims = call_kwargs["dim"]
+                    if isinstance(dims, str):
+                        dims = [dims]
+                    if any("lat" in d for d in dims):
+                        w_kwargs["lat_dim"] = [d for d in dims if "lat" in d][0]
+                    if any("lon" in d for d in dims):
+                        w_kwargs["lon_dim"] = [d for d in dims if "lon" in d][0]
+
+                if metric_name == "MB":
+                    return monet_stats.weighted_spatial_mean(mod - obs, weights=w, **w_kwargs)
+                elif metric_name == "MAE":
+                    return monet_stats.weighted_spatial_mean(abs(mod - obs), weights=w, **w_kwargs)
+                elif metric_name == "MSE":
+                    return monet_stats.weighted_spatial_mean((mod - obs) ** 2, weights=w, **w_kwargs)
+                elif metric_name == "RMSE":
+                    mse = monet_stats.weighted_spatial_mean((mod - obs) ** 2, weights=w, **w_kwargs)
+                    return np.sqrt(mse)
+
             return func(obs, mod, **call_kwargs)
         else:
-            # Handle DataArray or other monet-stats compatible objects
             return func(data, **call_kwargs)
 
     elif isinstance(data, pd.DataFrame):

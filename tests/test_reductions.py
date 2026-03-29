@@ -36,8 +36,8 @@ def test_spatial_mean_double_check():
     np.testing.assert_allclose(res_eager.values, res_lazy.compute().values)
 
     # Verify provenance
-    assert "Computed area-weighted spatial mean" in res_eager.attrs["history"]
-    assert "Computed area-weighted spatial mean" in res_lazy.attrs["history"]
+    assert "via monet-stats" in res_eager.attrs["history"]
+    assert "via monet-stats" in res_lazy.attrs["history"]
 
     print("\n✅ Aero Protocol Double-Check Passed: Eager == Lazy (Dask) for spatial_mean")
 
