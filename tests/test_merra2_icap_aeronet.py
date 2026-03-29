@@ -138,6 +138,51 @@ def test_merra2_icap_aeronet_full_workflow(sample_data_files, mocker):
     assert "mb" in results
 
 
+def test_merra2_vs_icap_bias_workflow(sample_data_files, mocker):
+    """Test the model-to-model comparison workflow (MERRA-2 vs ICAP-MME bias)."""
+    icap_fn, merra2_fn, _ = sample_data_files
+
+    # 1. Load Data
+    ds_icap = load_data("icap", "icap_mme", {"files": icap_fn})
+    ds_m2 = load_data("m2", "merra2", {"files": merra2_fn})
+
+    # 2. Pairing (Model to Model Regrid)
+    mock_regridder_obj = MagicMock()
+
+    def mock_regridder_apply(ds):
+        # Simulate regridding m2 to icap grid
+        # Return m2 data on icap's (lat, lon) dimensions
+        res = xr.Dataset(
+            {"TOTEXTTAU": (("time", "lat", "lon"), ds.TOTEXTTAU.values)},
+            coords=ds_icap.coords,
+        )
+        return res
+
+    mock_regridder_obj.side_effect = mock_regridder_apply
+    mocker.patch("xregrid.Regridder", return_value=mock_regridder_obj)
+    mocker.patch("monet.accessors.base.has_xregrid", True)
+    mocker.patch("monet.util.resample.has_xregrid", True)
+    import xregrid
+
+    mocker.patch("monet.util.resample.Regridder", xregrid.Regridder, create=True)
+
+    # Use 'bilinear' or any method that triggers regridding
+    pair_m2_icap = pair_data("p_m2_icap", "bilinear", ds_m2, ds_icap, {"merge": True})
+
+    assert "TOTEXTTAU" in pair_m2_icap.data_vars
+    assert "modeaod550" in pair_m2_icap.data_vars
+
+    # 3. Statistics (Bias)
+    import monet_stats
+
+    mocker.patch.object(monet_stats, "MB", return_value=xr.DataArray(np.random.rand(10, 10), dims=("lat", "lon"), attrs={"history": ""}))
+
+    results = compute_statistics("bias_stats", ["mb"], pair_m2_icap, {"obs_var": "modeaod550", "mod_var": "TOTEXTTAU"})
+
+    assert "mb" in results
+    assert "lat" in results["mb"].dims
+
+
 def test_merra2_lazy_loading_real_reader(sample_data_files, mocker):
     """Verify that MERRA-2 loading remains lazy when using the real reader."""
     _, merra2_fn, _ = sample_data_files
