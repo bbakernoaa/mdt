@@ -21,3 +21,11 @@ MDT acts as the "glue" for several foundational libraries:
 *   **monet:** Provides core utilities for spatial and temporal pairing of model data to observation points or grids.
 *   **monet-stats:** A robust library for computing standardized atmospheric verification metrics.
 *   **monet-plots:** Specialized plotting routines tailored for atmospheric science.
+
+## Getting Started
+
+To explore what MDT can do, check out the following sections:
+
+*   **[Quick Start Guide](quick_start.md):** Get up and running with a simple example.
+*   **[Workflow Examples](examples.md):** Detailed examples of complex verification tasks.
+*   **[YAML Format](yaml_format.md):** Reference for defining your own workflows.

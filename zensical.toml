@@ -11,5 +11,6 @@ items = [
     { label = "Quick Start", path = "quick_start.md" },
     { label = "User Guide", path = "user_guide.md" },
     { label = "YAML Format", path = "yaml_format.md" },
+    { label = "Workflow Examples", path = "examples.md" },
     { label = "HPC Usage", path = "hpc_usage.md" }
 ]

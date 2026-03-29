@@ -12,56 +12,54 @@ logger = logging.getLogger(__name__)
 
 def load_data(name: str, dataset_type: str, kwargs: dict) -> Union[xr.Dataset, pd.DataFrame]:
     """
-    Dynamically loads data using monetio readers.
+    Dynamically loads data using monetio.
 
     Parameters
     ----------
     name : str
         The configuration identifier for this data.
     dataset_type : str
-        The name of the monetio dataset (e.g., 'cmaq', 'aeronet', 'gcafs').
+        The name of the monetio source (e.g., 'cmaq', 'aeronet', 'merra2').
     kwargs : dict
-        Additional keyword arguments to pass directly to the monetio dataset
-        reader's open function.
+        Additional keyword arguments to pass to the monetio reader.
 
     Returns
     -------
     xarray.Dataset or pandas.DataFrame
         The loaded dataset object returned by monetio.
 
-    Raises
-    ------
-    AttributeError
-        If no standard open function (`open_dataset`, `open`, `open_mfdataset`)
-        is found in the dynamically loaded module.
-
     Examples
     --------
-    >>> ds = load_data("my_cmaq", "cmaq", {"fname": "cmaq_file.nc"})
+    >>> ds = load_data("my_merra2", "merra2", {"dates": "2023-01-01"})
     """
-    logger.info(f"Loading data '{name}' using monetio.readers.{dataset_type}")
+    logger.info(f"Loading data '{name}' using monetio.load('{dataset_type}')")
 
     try:
-        # Dynamically import the specific monetio reader
-        module_path = f"monetio.datasets.{dataset_type}"  # Monetio changed from readers to datasets
-        try:
-            reader_module = importlib.import_module(module_path)
-        except ImportError:
-            # Try readers if datasets fails
-            module_path = f"monetio.readers.{dataset_type}"
-            reader_module = importlib.import_module(module_path)
+        import monetio
 
-        # Standard approach in monetio is usually an `open_dataset` or `open` function
-        if hasattr(reader_module, "open_dataset"):
-            func = reader_module.open_dataset
-        elif hasattr(reader_module, "open"):
-            func = reader_module.open
-        elif hasattr(reader_module, "open_mfdataset"):
-            func = reader_module.open_mfdataset
+        # Use the universal load function if available
+        if hasattr(monetio, "load"):
+            dataset = monetio.load(dataset_type, **kwargs)
         else:
-            raise AttributeError(f"Could not find a standard open function in {module_path}")
+            # Fallback for older versions
+            # Dynamically import the specific monetio reader
+            module_path = f"monetio.datasets.{dataset_type}"
+            try:
+                reader_module = importlib.import_module(module_path)
+            except ImportError:
+                module_path = f"monetio.readers.{dataset_type}"
+                reader_module = importlib.import_module(module_path)
 
-        dataset = func(**kwargs)
+            if hasattr(reader_module, "open_dataset"):
+                func = reader_module.open_dataset
+            elif hasattr(reader_module, "open"):
+                func = reader_module.open
+            elif hasattr(reader_module, "open_mfdataset"):
+                func = reader_module.open_mfdataset
+            else:
+                raise AttributeError(f"Could not find a standard open function in {module_path}")
+
+            dataset = func(**kwargs)
 
         # Provenance Tracking
         msg = f"Loaded dataset '{name}' of type '{dataset_type}' with params {kwargs}."
