@@ -94,6 +94,10 @@ class ConfigParser:
         if "clusters" in exec_cfg and "default_cluster" not in exec_cfg:
             exec_cfg["default_cluster"] = list(exec_cfg["clusters"].keys())[0]
 
+        # Ensure a local cluster is always defined for service-node tasks (like data download)
+        if "local" not in exec_cfg.get("clusters", {}):
+            exec_cfg.setdefault("clusters", {})["local"] = {"mode": "local", "workers": 1}
+
         return exec_cfg
 
     def get(self, key, default=None):

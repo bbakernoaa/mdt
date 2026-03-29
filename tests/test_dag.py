@@ -36,6 +36,35 @@ def test_dag_builder_kerchunk_kwargs():
     assert node["kwargs"]["files"] == "dummy.nc"
 
 
+def test_dag_builder_cluster_defaults():
+    """Test that DAGBuilder assigns 'local' to data nodes and default_cluster to others."""
+    config = DummyConfig(
+        data_dict={
+            "test_data": {
+                "type": "cmaq"
+            },
+            "test_target": {
+                "type": "aeronet"
+            }
+        }
+    )
+    config.pairing = {
+        "my_pairing": {
+            "source": "test_data",
+            "target": "test_target"
+        }
+    }
+    builder = DAGBuilder(config)
+    dag = builder.build()
+
+    # Data nodes should default to local cluster
+    assert dag.nodes["load_test_data"]["cluster"] == "local"
+    assert dag.nodes["load_test_target"]["cluster"] == "local"
+
+    # Pairing nodes should default to the execution block's default cluster
+    assert dag.nodes["pair_my_pairing"]["cluster"] == "compute"
+
+
 def test_dag_builder_kerchunk_no_kwargs():
     """Test that DAGBuilder handles missing kwargs correctly with kerchunk."""
     config_dict = {
