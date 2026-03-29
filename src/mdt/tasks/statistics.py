@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Dict, List, Union
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -31,8 +32,8 @@ def compute_statistics(
     input_data : xr.Dataset or xr.DataArray or pd.DataFrame
         The paired dataset containing both model and observational data.
     kwargs : Dict[str, Any]
-        Additional keyword arguments passed to the monet_stats metric functions
-        (e.g., `obs_var`, `mod_var`, or group-by parameters).
+        Additional keyword arguments passed to the monet_stats metric functions.
+        Common keys: `obs_var`, `mod_var`, `weights`, `dim`.
 
     Returns
     -------
@@ -43,14 +44,6 @@ def compute_statistics(
     ------
     ImportError
         If monet-stats is not installed.
-    AttributeError
-        If a specified metric is not found in monet-stats.
-
-    Examples
-    --------
-    >>> stats = compute_statistics(
-    ...     "model_eval", ["rmse", "mae"], ds, {"obs_var": "obs", "mod_var": "mod"}
-    ... )
     """
     logger.info("Computing statistics '%s' for metrics: %s", name, metrics)
 
@@ -69,7 +62,7 @@ def compute_statistics(
             try:
                 result = _execute_metric(input_data, metric_func, kwargs)
 
-                # Provenance Tracking
+                # Provenance Tracking (Aero Protocol Rule 2.3)
                 msg = f"Computed {metric_name} with params: {kwargs}"
                 result = update_history(result, msg)
 
@@ -84,42 +77,17 @@ def compute_statistics(
     except ImportError:
         logger.error("monet-stats is not installed. Please install it to use this task.")
         raise
-    except Exception as e:
-        logger.error("An unexpected error occurred during statistics computation: %s", e)
-        raise
 
 
 def _find_metric(module: Any, metric_name: str) -> Any:
-    """
-    Robust discovery of metric functions in monet-stats.
-
-    Parameters
-    ----------
-    module : Any
-        The monet-stats module or submodule to search.
-    metric_name : str
-        The name of the metric to find (case-insensitive).
-
-    Returns
-    -------
-    Any
-        The callable metric function if found, otherwise None.
-
-    Examples
-    --------
-    >>> import monet_stats
-    >>> func = _find_metric(monet_stats, "RMSE")
-    """
-    # 1. Direct attribute access (case-sensitive)
+    """Robust discovery of metric functions in monet-stats."""
     if hasattr(module, metric_name):
         return getattr(module, metric_name)
 
-    # 2. Case-insensitive search in top-level
     for attr in dir(module):
         if attr.lower() == metric_name.lower():
             return getattr(module, attr)
 
-    # 3. Search in .stats submodule if it exists
     if hasattr(module, "stats"):
         for attr in dir(module.stats):
             if attr.lower() == metric_name.lower():
@@ -133,54 +101,67 @@ def _execute_metric(
     func: Any,
     kwargs: Dict[str, Any],
 ) -> Union[xr.Dataset, xr.DataArray, pd.Series]:
-    """
-    Execute metric from monet-stats with native Xarray/Dask support.
+    """Execute metric from monet-stats with native Xarray/Dask support."""
+    import monet_stats
 
-    Adheres to the Aero Protocol by calling metrics directly on Xarray
-    objects, allowing the backend (NumPy or Dask) to handle the data
-    without forcing re-chunking or memory-intensive operations.
-
-    Parameters
-    ----------
-    data : xr.Dataset or xr.DataArray or pd.DataFrame
-        The input data to compute metrics on.
-    func : Any
-        The callable metric function from monet-stats (e.g., `monet_stats.rmse`).
-    kwargs : Dict[str, Any]
-        Additional keyword arguments for the metric function, including
-        `obs_var` and `mod_var` for Dataset inputs.
-
-    Returns
-    -------
-    xr.Dataset or xr.DataArray or pd.Series
-        The computed metric result, preserving the backend (NumPy or Dask).
-
-    Examples
-    --------
-    >>> import monet_stats
-    >>> res = _execute_metric(ds, monet_stats.rmse, {"obs_var": "obs", "mod_var": "mod"})
-    """
     obs_var = kwargs.get("obs_var", "obs")
     mod_var = kwargs.get("mod_var", "mod")
+    weights = kwargs.get("weights")
 
-    # Filter out MDT-specific keys before passing to monet-stats
-    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var"]}
+    # Filter out MDT-specific keys for the standard metric call
+    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights"]}
 
     if isinstance(data, (xr.Dataset, xr.DataArray)):
+        # 1. Extract Target Data
         if isinstance(data, xr.Dataset):
-            obs = data[obs_var]
-            mod = data[mod_var]
-            # Aero Protocol: Call directly on DataArrays to preserve the backend.
-            # Libraries like monet-stats are expected to be backend-agnostic.
-            return func(obs, mod, **call_kwargs)
+            target_obs = data[obs_var]
+            target_mod = data[mod_var]
         else:
-            # Handle DataArray or other monet-stats compatible objects
-            return func(data, **call_kwargs)
+            target_obs = None  # Not used for single DataArray metrics
+            target_mod = data
+
+        # 2. Weighted Logic (Aero Protocol + monet-stats backend)
+        if weights is not None:
+            # Resolve weights
+            if isinstance(weights, str) and isinstance(data, xr.Dataset) and weights in data:
+                w = data[weights]
+            elif isinstance(weights, str) and isinstance(data, xr.DataArray) and weights in data.coords:
+                w = data.coords[weights]
+            else:
+                w = weights
+
+            # Map 'dim' keyword to 'lat_dim'/'lon_dim' for weighted_spatial_mean
+            w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
+            if "dim" in call_kwargs:
+                dims = call_kwargs["dim"]
+                if isinstance(dims, str):
+                    dims = [dims]
+                for d in dims:
+                    if "lat" in d:
+                        w_kwargs["lat_dim"] = d
+                    if "lon" in d:
+                        w_kwargs["lon_dim"] = d
+
+            # Push weighted reductions through monet-stats engine
+            metric_name = getattr(func, "__name__", "").upper()
+            if metric_name == "MB" and target_obs is not None:
+                return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
+            elif metric_name == "MAE" and target_obs is not None:
+                return monet_stats.weighted_spatial_mean(abs(target_mod - target_obs), weights=w, **w_kwargs)
+            elif metric_name == "MSE" and target_obs is not None:
+                return monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
+            elif metric_name == "RMSE" and target_obs is not None:
+                mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
+                return np.sqrt(mse)
+
+        # 3. Standard Fallback
+        if isinstance(data, xr.Dataset):
+            return func(target_obs, target_mod, **call_kwargs)
+        return func(data, **call_kwargs)
 
     elif isinstance(data, pd.DataFrame):
         obs = data[obs_var]
         mod = data[mod_var]
         return func(obs, mod, **call_kwargs)
 
-    else:
-        return func(data, **call_kwargs)
+    return func(data, **call_kwargs)
