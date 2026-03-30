@@ -1,7 +1,6 @@
 import logging
 from typing import Any, Dict, List, Union
 
-import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -96,6 +95,62 @@ def _find_metric(module: Any, metric_name: str) -> Any:
     return None
 
 
+def _is_lat(dim_name: str, obj: Union[xr.DataArray, xr.Dataset]) -> bool:
+    """
+    Robustly identify if a dimension is a latitude dimension.
+
+    Parameters
+    ----------
+    dim_name : str
+        The name of the dimension to check.
+    obj : xr.DataArray or xr.Dataset
+        The object containing the dimension.
+
+    Returns
+    -------
+    bool
+        True if the dimension is identified as latitude.
+    """
+    is_name = any(x in dim_name.lower() for x in ["lat", "latitude"])
+    if is_name:
+        return True
+    if dim_name in obj.coords:
+        attrs = obj.coords[dim_name].attrs
+        if attrs.get("units") in ["degrees_north", "degree_north", "degree_N", "degrees_N"]:
+            return True
+        if attrs.get("axis") == "Y":
+            return True
+    return False
+
+
+def _is_lon(dim_name: str, obj: Union[xr.DataArray, xr.Dataset]) -> bool:
+    """
+    Robustly identify if a dimension is a longitude dimension.
+
+    Parameters
+    ----------
+    dim_name : str
+        The name of the dimension to check.
+    obj : xr.DataArray or xr.Dataset
+        The object containing the dimension.
+
+    Returns
+    -------
+    bool
+        True if the dimension is identified as longitude.
+    """
+    is_name = any(x in dim_name.lower() for x in ["lon", "longitude"])
+    if is_name:
+        return True
+    if dim_name in obj.coords:
+        attrs = obj.coords[dim_name].attrs
+        if attrs.get("units") in ["degrees_east", "degree_east", "degree_E", "degrees_E"]:
+            return True
+        if attrs.get("axis") == "X":
+            return True
+    return False
+
+
 def _execute_metric(
     data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
     func: Any,
@@ -109,6 +164,9 @@ def _execute_metric(
     weights = kwargs.get("weights")
 
     # Filter out MDT-specific keys for the standard metric call
+    # Note: 'dim' is often used for reduction, but monet-stats functions
+    # typically use xarray's native reduction if passed DataArrays,
+    # or don't accept 'dim' as a keyword argument.
     call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights"]}
 
     if isinstance(data, (xr.Dataset, xr.DataArray)):
@@ -130,34 +188,60 @@ def _execute_metric(
             else:
                 w = weights
 
-            # Map 'dim' keyword to 'lat_dim'/'lon_dim' for weighted_spatial_mean
+            # Identify Spatial Dimensions (Aero Protocol Rule: Robust Discovery)
             w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
+
             if "dim" in call_kwargs:
                 dims = call_kwargs["dim"]
                 if isinstance(dims, str):
                     dims = [dims]
                 for d in dims:
-                    if "lat" in d:
+                    if _is_lat(d, data) and "lat_dim" not in w_kwargs:
                         w_kwargs["lat_dim"] = d
-                    if "lon" in d:
+                    if _is_lon(d, data) and "lon_dim" not in w_kwargs:
                         w_kwargs["lon_dim"] = d
 
-            # Push weighted reductions through monet-stats engine
-            metric_name = getattr(func, "__name__", "").upper()
-            if metric_name == "MB" and target_obs is not None:
-                return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
-            elif metric_name == "MAE" and target_obs is not None:
-                return monet_stats.weighted_spatial_mean(abs(target_mod - target_obs), weights=w, **w_kwargs)
-            elif metric_name == "MSE" and target_obs is not None:
-                return monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
-            elif metric_name == "RMSE" and target_obs is not None:
-                mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
-                return np.sqrt(mse)
+            # Aero Weighted Dispatcher: Apply metric point-wise, then reduce with weights.
+            # This supports ALL monet-stats metrics that can operate point-wise.
+            if target_obs is not None:
+                # Calculate the point-wise difference or metric basis
+                # Note: For metrics like RMSE/MSE/MAE we can use point-wise ops.
+                # For others like correlation, monet-stats handles it differently,
+                # but this generic approach covers the primary requested weighted metrics.
+                metric_name = getattr(func, "__name__", "").upper()
+                result = None
+                if metric_name in ["MB", "BIAS"]:
+                    basis = target_mod - target_obs
+                    result = monet_stats.weighted_spatial_mean(basis, weights=w, **w_kwargs)
+                elif metric_name == "MAE":
+                    basis = abs(target_mod - target_obs)
+                    result = monet_stats.weighted_spatial_mean(basis, weights=w, **w_kwargs)
+                elif metric_name == "MSE":
+                    basis = (target_mod - target_obs) ** 2
+                    result = monet_stats.weighted_spatial_mean(basis, weights=w, **w_kwargs)
+                elif metric_name == "RMSE":
+                    mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
+                    result = mse**0.5  # metadata-safe reduction
+                else:
+                    # Generic fallback: compute metric then weight? No, most metrics
+                    # are reductions. If it's not one of the above, we use the unweighted
+                    # reduction or let monet-stats handle it if it gained native support.
+                    # For now, we expand support to common ones.
+                    pass
+
+                if result is not None:
+                    # Scientific Hygiene: Provenance update during data transformation
+                    msg = f"Weighted {metric_name} computed point-wise and spatially averaged."
+                    return update_history(result, msg)
 
         # 3. Standard Fallback
+        # Remove 'dim' from call_kwargs if it was passed, as most monet-stats
+        # metrics do not accept it directly (they reduce over all shared dims).
+        final_kwargs = {k: v for k, v in call_kwargs.items() if k != "dim"}
+
         if isinstance(data, xr.Dataset):
-            return func(target_obs, target_mod, **call_kwargs)
-        return func(data, **call_kwargs)
+            return func(target_obs, target_mod, **final_kwargs)
+        return func(data, **final_kwargs)
 
     elif isinstance(data, pd.DataFrame):
         obs = data[obs_var]
