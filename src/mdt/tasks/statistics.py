@@ -143,6 +143,9 @@ def _execute_metric(
                         w_kwargs["lon_dim"] = d
 
             # Push weighted reductions through monet-stats engine
+            # Orchestrator Rule: Avoid logic in MDT, use monet_stats directly.
+            # Currently, many monet-stats metrics don't accept 'weights' directly,
+            # so we use weighted_spatial_mean as the delegation engine.
             metric_name = getattr(func, "__name__", "").upper()
             if metric_name == "MB" and target_obs is not None:
                 return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
@@ -154,8 +157,8 @@ def _execute_metric(
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
                 return np.sqrt(mse)
             elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
-                # Weighted Pearson Correlation (Aero Protocol + monet-stats backend)
-                # r = cov(mod, obs; w) / sqrt(var(mod; w) * var(obs; w))
+                # Delegate to monet_stats.weighted_spatial_mean for component calculation
+                # to maintain the "MDT is an Orchestrator" rule.
                 mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
                 mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
 
