@@ -153,6 +153,20 @@ def _execute_metric(
             elif metric_name == "RMSE" and target_obs is not None:
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
                 return np.sqrt(mse)
+            elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
+                # Weighted Pearson Correlation (Aero Protocol + monet-stats backend)
+                # r = cov(mod, obs; w) / sqrt(var(mod; w) * var(obs; w))
+                mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
+                mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
+
+                dev_mod = target_mod - mu_mod
+                dev_obs = target_obs - mu_obs
+
+                cov = monet_stats.weighted_spatial_mean(dev_mod * dev_obs, weights=w, **w_kwargs)
+                var_mod = monet_stats.weighted_spatial_mean(dev_mod**2, weights=w, **w_kwargs)
+                var_obs = monet_stats.weighted_spatial_mean(dev_obs**2, weights=w, **w_kwargs)
+
+                return cov / np.sqrt(var_mod * var_obs)
 
         # 3. Standard Fallback
         if isinstance(data, xr.Dataset):
