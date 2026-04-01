@@ -11,8 +11,7 @@ rng = np.random.default_rng(42)
 data = rng.standard_normal((len(lats), len(lons)))
 da = xr.DataArray(data, coords={"lat": lats, "lon": lons}, dims=("lat", "lon"), name="test_data")
 
-# 2. Track A: Static Visualization (Matplotlib + Cartopy)
-# Requirement: projection in subplots, transform in plot calls (handled by mdt.tasks.plotting)
+# 2. Track A: Static Visualization (Matplotlib + Cartopy via monet-plots)
 print("Generating Track A (Static) plot...")
 fig_a = generate_plot(
     name="spatial_demo_track_a",
@@ -21,13 +20,13 @@ fig_a = generate_plot(
     kwargs={
         "savename": "spatial_demo_track_a.png",
         "cmap": "RdBu_r",
-        "map_kwargs": {"projection": ccrs.Robinson()},
+        "projection": ccrs.Robinson(),
+        "coastlines": True,
     },
     track="A",
 )
 
-# 3. Track B: Interactive Visualization (HvPlot)
-# Requirement: rasterize=True for large grids
+# 3. Track B: Interactive Visualization (HvPlot via monet-plots)
 print("Generating Track B (Interactive) plot...")
 plot_b = generate_plot(
     name="spatial_demo_track_b",

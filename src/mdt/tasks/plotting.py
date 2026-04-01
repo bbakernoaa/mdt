@@ -1,7 +1,6 @@
 import logging
 from typing import Any, Dict, Union
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import xarray as xr
 
@@ -54,76 +53,39 @@ def generate_plot(
 
 
 def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
-    """Track A: Static plotting with Matplotlib and Cartopy."""
-    import importlib
-
-    import cartopy.crs as ccrs
-
-    module_path = f"monet_plots.{plot_type}"
-    try:
-        plot_module = importlib.import_module(module_path)
-    except ImportError:
-        logger.error("monet-plots module %s not found.", module_path)
-        raise
-
-    # Look for the plotting function
-    func = getattr(plot_module, "plot", None)
-    if func is None:
-        possible_funcs = [attr for attr in dir(plot_module) if plot_type in attr.lower() and callable(getattr(plot_module, attr))]
-        if possible_funcs:
-            func = getattr(plot_module, possible_funcs[0])
-        else:
-            raise AttributeError(f"Could not find a plotting function in {module_path}")
-
-    # Enforce Cartopy for spatial plots
-    is_spatial = "spatial" in plot_type.lower()
-    projection = None
-    if is_spatial:
-        if "map_kwargs" not in kwargs:
-            kwargs["map_kwargs"] = {}
-        if "projection" not in kwargs["map_kwargs"]:
-            kwargs["map_kwargs"]["projection"] = ccrs.PlateCarree()
-        projection = kwargs["map_kwargs"]["projection"]
-        if "transform" not in kwargs:
-            kwargs["transform"] = ccrs.PlateCarree()
-
-    if "ax" not in kwargs:
-        subplot_kw = {}
-        if projection:
-            subplot_kw["projection"] = projection
-        fig, ax = plt.subplots(figsize=kwargs.pop("figsize", (10, 8)), subplot_kw=subplot_kw)
-        kwargs["ax"] = ax
+    """Track A: Static plotting with monet-plots (Matplotlib + Cartopy)."""
+    import monet_plots
 
     savename = kwargs.pop("savename", f"{name}.png")
 
-    plot_obj = func(input_data, **kwargs)
+    # Orchestrator Rule: Dispatch to monet_plots class-based API
+    if "spatial" in plot_type.lower():
+        # Use SpatialImshowPlot for 2D grids (standard for model/obs)
+        plot_obj = monet_plots.SpatialImshowPlot(input_data, **kwargs)
+        plot_obj.plot(**kwargs)
+        plot_obj.save(savename)
+        logger.info("Saved Track A plot '%s' to %s via monet-plots", name, savename)
+        plot_obj.close()
+        return plot_obj
+    elif "scatter" in plot_type.lower():
+        plot_obj = monet_plots.ScatterPlot(input_data, **kwargs)
+        plot_obj.plot(**kwargs)
+        plot_obj.save(savename)
+        plot_obj.close()
+        return plot_obj
 
-    if "ax" in kwargs and kwargs["ax"] is not None:
-        fig = kwargs["ax"].figure
-        fig.savefig(savename, bbox_inches="tight")
-        logger.info("Saved Track A plot '%s' to %s", name, savename)
-        plt.close(fig)
-
-    return plot_obj
+    # Fallback to general base class if specific class not found/needed
+    raise NotImplementedError(f"Static plot type '{plot_type}' not yet implemented in mdt orchestrator.")
 
 
 def _generate_interactive_plot(name, plot_type, input_data, kwargs) -> Any:
-    """Track B: Interactive plotting with HvPlot/GeoViews."""
-    import hvplot.pandas  # noqa: F401
-    import hvplot.xarray  # noqa: F401
+    """Track B: Interactive plotting with monet-plots (HvPlot/GeoViews)."""
+    import monet_plots
 
-    # Mandatory: rasterize=True for large grids in Track B
-    if "rasterize" not in kwargs:
-        kwargs["rasterize"] = True
+    # Orchestrator Rule: Dispatch to monet_plots class-based API
+    if "spatial" in plot_type.lower():
+        plot_obj = monet_plots.SpatialImshowPlot(input_data, **kwargs)
+        logger.info("Generated Track B interactive plot '%s' via monet-plots", name)
+        return plot_obj.hvplot(**kwargs)
 
-    # Use hvplot dispatch
-    if hasattr(input_data, "hvplot"):
-        # If it's a spatial plot, we might need geoviews
-        if "spatial" in plot_type.lower() or "geo" in kwargs.get("features", []):
-            kwargs["geo"] = True
-
-        plot_obj = input_data.hvplot(**kwargs)
-        logger.info("Generated Track B interactive plot '%s'", name)
-        return plot_obj
-    else:
-        raise TypeError(f"Input data of type {type(input_data)} does not support hvplot.")
+    raise NotImplementedError(f"Interactive plot type '{plot_type}' not yet implemented in mdt orchestrator.")
