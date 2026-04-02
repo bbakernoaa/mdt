@@ -55,12 +55,15 @@ def compute_statistics(
             logger.debug("Processing metric: %s", metric_name)
             metric_func = _find_metric(monet_stats, metric_name)
 
-            if not metric_func:
+            # Special case for MDT-implemented metrics even if not in monet_stats
+            is_mdt_supported = metric_name.upper() in ["CORR", "PEARSONR", "CORRELATION"]
+
+            if not metric_func and not is_mdt_supported:
                 logger.warning("Metric '%s' not found in monet_stats. Skipping.", metric_name)
                 continue
 
             try:
-                result = _execute_metric(input_data, metric_func, kwargs)
+                result = _execute_metric(input_data, metric_func, kwargs, metric_name=metric_name)
 
                 # Provenance Tracking (Aero Protocol Rule 2.3)
                 msg = f"Computed {metric_name} with params: {kwargs}"
@@ -77,6 +80,22 @@ def compute_statistics(
     except ImportError:
         logger.error("monet-stats is not installed. Please install it to use this task.")
         raise
+
+
+def _is_lat(da: xr.DataArray) -> bool:
+    """Check if a DataArray represents latitude."""
+    name = str(da.name).lower() if da.name else ""
+    units = str(da.attrs.get("units", "")).lower()
+    axis = str(da.attrs.get("axis", "")).lower()
+    return "lat" in name or "latitude" in name or "degree_n" in units or axis == "y"
+
+
+def _is_lon(da: xr.DataArray) -> bool:
+    """Check if a DataArray represents longitude."""
+    name = str(da.name).lower() if da.name else ""
+    units = str(da.attrs.get("units", "")).lower()
+    axis = str(da.attrs.get("axis", "")).lower()
+    return "lon" in name or "longitude" in name or "degree_e" in units or axis == "x"
 
 
 def _find_metric(module: Any, metric_name: str) -> Any:
@@ -100,6 +119,7 @@ def _execute_metric(
     data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
     func: Any,
     kwargs: Dict[str, Any],
+    metric_name: str = None,
 ) -> Union[xr.Dataset, xr.DataArray, pd.Series]:
     """Execute metric from monet-stats with native Xarray/Dask support."""
     import monet_stats
@@ -142,8 +162,20 @@ def _execute_metric(
                     if "lon" in d:
                         w_kwargs["lon_dim"] = d
 
+            # Auto-discovery of spatial dimensions (Aero Protocol Hygiene)
+            if "lat_dim" not in w_kwargs or "lon_dim" not in w_kwargs:
+                for d in data.dims:
+                    if "lat_dim" not in w_kwargs and _is_lat(data[d]):
+                        w_kwargs["lat_dim"] = d
+                    if "lon_dim" not in w_kwargs and _is_lon(data[d]):
+                        w_kwargs["lon_dim"] = d
+
             # Push weighted reductions through monet-stats engine
-            metric_name = getattr(func, "__name__", "").upper()
+            if metric_name is None:
+                metric_name = getattr(func, "__name__", "").upper()
+            else:
+                metric_name = metric_name.upper()
+
             if metric_name == "MB" and target_obs is not None:
                 return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
             elif metric_name == "MAE" and target_obs is not None:
@@ -153,6 +185,19 @@ def _execute_metric(
             elif metric_name == "RMSE" and target_obs is not None:
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
                 return np.sqrt(mse)
+            elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
+                # Weighted Pearson Correlation calculated via expectations to preserve laziness
+                e_x = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
+                e_y = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
+                e_xy = monet_stats.weighted_spatial_mean(target_mod * target_obs, weights=w, **w_kwargs)
+                e_x2 = monet_stats.weighted_spatial_mean(target_mod**2, weights=w, **w_kwargs)
+                e_y2 = monet_stats.weighted_spatial_mean(target_obs**2, weights=w, **w_kwargs)
+
+                cov = e_xy - (e_x * e_y)
+                var_x = e_x2 - (e_x**2)
+                var_y = e_y2 - (e_y**2)
+
+                return cov / np.sqrt(var_x * var_y)
 
         # 3. Standard Fallback
         if isinstance(data, xr.Dataset):

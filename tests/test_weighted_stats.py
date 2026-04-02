@@ -58,3 +58,68 @@ def test_compute_statistics_weighted_double_check(mocker):
     assert "Computed MB" in res_eager.attrs["history"]
 
     print("\n✅ Aero Protocol Double-Check Passed: Weighted Eager == Lazy (Dask)")
+
+
+def test_weighted_correlation_double_check():
+    """
+    Aero Protocol: Double-Check Test for Weighted Correlation.
+
+    Verifies that weighted Pearson correlation yields identical results
+    for Eager (NumPy) and Lazy (Dask) backends and preserve laziness.
+    """
+    # 1. Setup Eager Data (NumPy)
+    lat = np.linspace(-90, 90, 10)
+    lon = np.linspace(-180, 180, 10)
+
+    # Create lat weights
+    weights = np.cos(np.deg2rad(lat))
+    weights_2d = np.broadcast_to(weights[:, np.newaxis], (10, 10))
+
+    ds_eager = xr.Dataset(
+        {
+            "obs": (("lat", "lon"), np.random.rand(10, 10)),
+            "mod": (("lat", "lon"), np.random.rand(10, 10)),
+            "w": (("lat", "lon"), weights_2d),
+        },
+        coords={"lat": lat, "lon": lon},
+        attrs={"history": "Initial data"},
+    )
+
+    # 2. Setup Lazy Data (Dask)
+    ds_lazy = ds_eager.chunk({"lat": 5, "lon": 5})
+
+    # 3. Execute Eager (NumPy)
+    metrics = ["CORR"]
+    kwargs = {"obs_var": "obs", "mod_var": "mod", "weights": "w"}  # No dim passed, tests auto-discovery
+    results_eager = compute_statistics("test_eager", metrics, ds_eager, kwargs)
+    res_eager = results_eager["CORR"]
+
+    # 4. Execute Lazy (Dask)
+    results_lazy = compute_statistics("test_lazy", metrics, ds_lazy, kwargs)
+    res_lazy = results_lazy["CORR"]
+
+    # 5. Assertions
+    # Verify laziness (Aero Protocol Rule 1.2)
+    assert hasattr(res_lazy.data, "dask"), "Result should be Dask-backed for lazy input"
+
+    # Verify identical results (Double-Check Rule)
+    np.testing.assert_allclose(res_eager.values, res_lazy.compute().values)
+
+    # Manual verification of weighted correlation
+    # We'll use a standard formula for weighted correlation
+    def weighted_corr(x, y, w):
+        def m(v, w):
+            return (v * w).sum() / w.sum()
+
+        def cov(x, y, w):
+            return m(x * y, w) - m(x, w) * m(y, w)
+
+        return cov(x, y, w) / np.sqrt(cov(x, x, w) * cov(y, y, w))
+
+    expected = weighted_corr(ds_eager.mod, ds_eager.obs, ds_eager.w)
+    np.testing.assert_allclose(res_eager.values, expected.values)
+
+    # Provenance check
+    assert "Computed CORR" in res_eager.attrs["history"]
+
+    print("\n✅ Aero Protocol Double-Check Passed: Weighted Correlation Eager == Lazy (Dask)")
