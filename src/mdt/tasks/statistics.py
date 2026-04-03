@@ -153,6 +153,26 @@ def _execute_metric(
             elif metric_name == "RMSE" and target_obs is not None:
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
                 return np.sqrt(mse)
+            elif (
+                metric_name in ["CORR", "PEARSONR", "CORRELATION"] or getattr(func, "__name__", "").upper() == "CORRELATION"
+            ) and target_obs is not None:
+                # Orchestrate Weighted Pearson Correlation (Aero Protocol)
+                # Formula: E[XY] - E[X]E[Y] / (sqrt(E[X^2] - E[X]^2) * sqrt(E[Y^2] - E[Y]^2))
+                ex = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
+                ey = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
+                exy = monet_stats.weighted_spatial_mean(target_mod * target_obs, weights=w, **w_kwargs)
+                ex2 = monet_stats.weighted_spatial_mean(target_mod**2, weights=w, **w_kwargs)
+                ey2 = monet_stats.weighted_spatial_mean(target_obs**2, weights=w, **w_kwargs)
+
+                cov = exy - ex * ey
+                var_x = ex2 - ex**2
+                var_y = ey2 - ey**2
+
+                result = cov / (np.sqrt(var_x) * np.sqrt(var_y))
+
+                # Provenance Tracking (Aero Protocol Rule 2.3)
+                msg = f"Computed weighted {metric_name} by orchestrating monet_stats.weighted_spatial_mean."
+                return update_history(result, msg)
 
         # 3. Standard Fallback
         if isinstance(data, xr.Dataset):

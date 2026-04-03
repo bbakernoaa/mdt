@@ -35,7 +35,6 @@ def test_pair_data_double_check(mocker):
     ds_lazy = ds_eager.chunk({"lat": 5, "lon": 5})
 
     # Force has_xregrid to True and mock monet.pair to avoid esmpy dependency
-    mocker.patch("monet.accessors.base.has_xregrid", True)
     mocker.patch("monet.util.resample.has_xregrid", True)
     mocker.patch("monet.util.combinetool.pair", side_effect=lambda src, tgt, **kwargs: src)
 
