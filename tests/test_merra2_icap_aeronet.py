@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
-
 from mdt.tasks.data import load_data
 from mdt.tasks.pairing import combine_paired_data, pair_data
 from mdt.tasks.statistics import compute_statistics
