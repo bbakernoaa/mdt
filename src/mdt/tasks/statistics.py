@@ -143,6 +143,9 @@ def _execute_metric(
                         w_kwargs["lon_dim"] = d
 
             # Push weighted reductions through monet-stats engine
+            # Orchestrator Rule: Avoid logic in MDT, use monet_stats directly.
+            # Currently, many monet-stats metrics don't accept 'weights' directly,
+            # so we use weighted_spatial_mean as the delegation engine.
             metric_name = getattr(func, "__name__", "").upper()
             if metric_name == "MB" and target_obs is not None:
                 return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
@@ -153,6 +156,20 @@ def _execute_metric(
             elif metric_name == "RMSE" and target_obs is not None:
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
                 return np.sqrt(mse)
+            elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
+                # Delegate to monet_stats.weighted_spatial_mean for component calculation
+                # to maintain the "MDT is an Orchestrator" rule.
+                mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
+                mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
+
+                dev_mod = target_mod - mu_mod
+                dev_obs = target_obs - mu_obs
+
+                cov = monet_stats.weighted_spatial_mean(dev_mod * dev_obs, weights=w, **w_kwargs)
+                var_mod = monet_stats.weighted_spatial_mean(dev_mod**2, weights=w, **w_kwargs)
+                var_obs = monet_stats.weighted_spatial_mean(dev_obs**2, weights=w, **w_kwargs)
+
+                return cov / np.sqrt(var_mod * var_obs)
 
         # 3. Standard Fallback
         if isinstance(data, xr.Dataset):
