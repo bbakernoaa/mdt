@@ -194,11 +194,13 @@ def test_merra2_lazy_loading_real_reader(sample_data_files, mocker):
     assert hasattr(ds.TOTEXTTAU.data, "dask") or type(ds.TOTEXTTAU.data).__module__.startswith("cubed")
     assert "Loaded dataset 'm2_lazy'" in ds.attrs["history"]
 
+
 def test_merra2_lazy_loading_cubed_reader(sample_data_files, mocker):
     """Verify that MERRA-2 loading handles cubed chunking properly."""
     _, merra2_fn, _ = sample_data_files
 
     import xarray as xr
+
     # Manually open dataset to explicitly use cubed as the chunkmanager
     # since load_data delegates to monetio which defaults to whatever xarray defaults to (usually dask)
     # This proves xarray cubed support integrates seamlessly with the hasattr check.
