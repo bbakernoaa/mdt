@@ -30,7 +30,7 @@ def test_spatial_mean_double_check():
 
     # 5. Assertions
     # Verify laziness: The underlying data should be a Dask array
-    assert hasattr(res_lazy.data, "dask"), "Result should be Dask-backed for lazy input"
+    assert hasattr(res_lazy.data, "dask") or type(res_lazy.data).__module__.startswith("cubed"), "Result should be lazy-backed for lazy input"
 
     # Verify identical results: NumPy-computed vs Dask-computed
     # We use allclose for floating point comparison

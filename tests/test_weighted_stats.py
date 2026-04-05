@@ -44,7 +44,7 @@ def test_compute_statistics_weighted_double_check(mocker):
 
     # 5. Assertions
     # Verify laziness (Aero Protocol Rule 1.2)
-    assert hasattr(res_lazy.data, "dask"), "Result should be Dask-backed for lazy input"
+    assert hasattr(res_lazy.data, "dask") or type(res_lazy.data).__module__.startswith("cubed"), "Result should be lazy-backed for lazy input"
 
     # Verify identical results (Double-Check Rule)
     np.testing.assert_allclose(res_eager.values, res_lazy.compute().values)

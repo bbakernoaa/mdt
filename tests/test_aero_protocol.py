@@ -46,7 +46,9 @@ def test_compute_statistics_aero_protocol(mocker):
 
     # 5. Assertions
     # Check that lazy run actually returned a lazy object
-    assert hasattr(res_lazy["RMSE"].data, "dask"), "Result should be Dask-backed for lazy input"
+    assert hasattr(res_lazy["RMSE"].data, "dask") or type(res_lazy["RMSE"].data).__module__.startswith("cubed"), (
+        "Result should be lazy-backed for lazy input"
+    )
 
     # Double-Check: Results must be identical after computation
     xr.testing.assert_allclose(res_eager["RMSE"], res_lazy["RMSE"].compute())
@@ -106,7 +108,7 @@ def test_compute_statistics_dask_enabled(mocker):
     # If the metric function preserves dask, then the result should have dask.
     # Our dask_enabled_metric does preserve dask because (mod-obs).mean() on dask arrays is lazy.
     if hasattr(res, "data"):
-        assert hasattr(res.data, "dask"), "Result must be lazy if the metric preserves it"
+        assert hasattr(res.data, "dask") or type(res.data).__module__.startswith("cubed"), "Result must be lazy if the metric preserves it"
 
     # Should work when computed
     val = res.compute() if hasattr(res, "compute") else res
