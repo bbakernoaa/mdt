@@ -46,7 +46,9 @@ def test_compute_statistics_aero_protocol(mocker):
 
     # 5. Assertions
     # Check that lazy run actually returned a lazy object
-    assert hasattr(res_lazy["RMSE"].data, "dask") or type(res_lazy["RMSE"].data).__module__.startswith("cubed"), "Result should be lazy-backed for lazy input"
+    assert hasattr(res_lazy["RMSE"].data, "dask") or type(res_lazy["RMSE"].data).__module__.startswith("cubed"), (
+        "Result should be lazy-backed for lazy input"
+    )
 
     # Double-Check: Results must be identical after computation
     xr.testing.assert_allclose(res_eager["RMSE"], res_lazy["RMSE"].compute())
