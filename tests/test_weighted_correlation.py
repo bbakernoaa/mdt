@@ -50,7 +50,7 @@ def test_weighted_correlation_aero_protocol(mocker):
 
     # 4. Assertions
     # Verify laziness (Aero Protocol Rule 1.2)
-    assert hasattr(res_lazy.data, "dask") or hasattr(res_lazy.data, "cubed"), "Result should be lazy-backed for lazy input"
+    assert hasattr(res_lazy.data, "dask") or type(res_lazy.data).__module__.startswith("cubed"), "Result should be lazy-backed for lazy input"
 
     # Verify identical results (Double-Check Rule)
     # Using small tolerance for float64
