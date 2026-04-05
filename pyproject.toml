@@ -19,6 +19,7 @@ dependencies = [
     "prefect-dask",
     "dask",
     "dask-jobqueue",
+    "cubed",
     "xarray",
     "pandas",
     "numpy",

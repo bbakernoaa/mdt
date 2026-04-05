@@ -49,7 +49,7 @@ def test_compute_statistics_aero_protocol_double_check(mocker):
 
     # 6. Assertions
     # Verify laziness (Aero Protocol Rule 1.2)
-    assert hasattr(res_lazy.data, "dask"), "Result should be Dask-backed for lazy input"
+    assert hasattr(res_lazy.data, "dask") or hasattr(res_lazy.data, "cubed"), "Result should be lazy-backed for lazy input"
 
     # Verify identical results (Double-Check Rule)
     # We compute the lazy result for comparison

@@ -191,5 +191,5 @@ def test_merra2_lazy_loading_real_reader(sample_data_files, mocker):
     ds = load_data("m2_lazy", "merra2", {"files": merra2_fn, "chunks": {"time": 1}})
 
     # Check if data is lazy (using Dask)
-    assert hasattr(ds.TOTEXTTAU.data, "dask")
+    assert hasattr(ds.TOTEXTTAU.data, "dask") or hasattr(ds.TOTEXTTAU.data, "cubed")
     assert "Loaded dataset 'm2_lazy'" in ds.attrs["history"]

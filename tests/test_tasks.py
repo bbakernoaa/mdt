@@ -46,7 +46,7 @@ def test_pair_data_double_check(mocker):
     res_lazy = pair_data("test_lazy", "interpolate", ds_lazy, ds_lazy, {})
 
     # Check that the lazy run is still lazy
-    assert hasattr(res_lazy.val.data, "dask")
+    assert hasattr(res_lazy.val.data, "dask") or hasattr(res_lazy.val.data, "cubed")
 
     # Double-Check: Results must be identical after compute
     xr.testing.assert_allclose(res_eager, res_lazy.compute())
@@ -63,7 +63,7 @@ def test_compute_statistics_double_check(mocker):
 
     # Mock monet_stats.RMSE
     def mock_rmse(obs, mod, **kwargs):
-        if hasattr(obs, "data") and hasattr(obs.data, "dask"):
+        if hasattr(obs, "data") and (hasattr(obs.data, "dask") or hasattr(obs.data, "cubed")):
             # Return a Lazy DataArray
             res = xr.DataArray(da.from_array(0.5, chunks=()), attrs={"history": "initial"})
             return res
@@ -100,7 +100,7 @@ def test_compute_statistics_double_check(mocker):
 
     # Ensure result is still lazy if input was lazy and result is an xarray object
     if hasattr(results_lazy["RMSE"], "data"):
-        assert hasattr(results_lazy["RMSE"].data, "dask")
+        assert hasattr(results_lazy["RMSE"].data, "dask") or hasattr(results_lazy["RMSE"].data, "cubed")
 
     # Double-Check: Results must be identical
     assert float(results_lazy["RMSE"].compute()) == float(results_eager["RMSE"])
