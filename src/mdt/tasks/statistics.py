@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from mdt.utils import update_history
+from mdt.utils import discover_spatial_dims, update_history
 
 logger = logging.getLogger(__name__)
 
@@ -132,15 +132,15 @@ def _execute_metric(
 
             # Map 'dim' keyword to 'lat_dim'/'lon_dim' for weighted_spatial_mean
             w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
-            if "dim" in call_kwargs:
-                dims = call_kwargs["dim"]
-                if isinstance(dims, str):
-                    dims = [dims]
-                for d in dims:
-                    if "lat" in d:
-                        w_kwargs["lat_dim"] = d
-                    if "lon" in d:
-                        w_kwargs["lon_dim"] = d
+            search_dims = call_kwargs.get("dim")
+            if isinstance(search_dims, str):
+                search_dims = [search_dims]
+
+            lat_dim, lon_dim = discover_spatial_dims(data, dims=search_dims)
+            if lat_dim and "lat_dim" not in w_kwargs:
+                w_kwargs["lat_dim"] = lat_dim
+            if lon_dim and "lon_dim" not in w_kwargs:
+                w_kwargs["lon_dim"] = lon_dim
 
             # Push weighted reductions through monet-stats engine
             # Orchestrator Rule: Avoid logic in MDT, use monet_stats directly.

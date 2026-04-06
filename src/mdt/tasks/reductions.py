@@ -4,7 +4,7 @@ from typing import Any, Union
 import monet_stats
 import xarray as xr
 
-from mdt.utils import update_history
+from mdt.utils import discover_spatial_dims, update_history
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +95,13 @@ def calculate_reduction(
     if method == "mean" and is_spatial:
         logger.info("Detected spatial mean; delegating to monet_stats for area-weighting.")
         # Find spatial dimensions within the reduction set
-        lat_candidates = [d for d in dims if "lat" in d.lower()]
-        lon_candidates = [d for d in dims if "lon" in d.lower()]
+        lat_dim, lon_dim = discover_spatial_dims(obj, dims=dims)
 
-        # Fallback to provided dims if forced but no names match
-        lat_dim = lat_candidates[0] if lat_candidates else dims[0]
-        lon_dim = lon_candidates[0] if lon_candidates else (dims[1] if len(dims) > 1 else dims[0])
+        # Fallback if discovery fails but reduction is forced
+        if lat_dim is None:
+            lat_dim = dims[0]
+        if lon_dim is None:
+            lon_dim = dims[1] if len(dims) > 1 else dims[0]
 
         # Step A: Perform the weighted spatial mean
         result = monet_stats.weighted_spatial_mean(obj, lat_dim=lat_dim, lon_dim=lon_dim, **kwargs)
