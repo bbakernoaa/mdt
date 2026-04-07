@@ -1,3 +1,4 @@
+import inspect
 import logging
 from typing import Any, Dict, List, Union
 
@@ -44,6 +45,12 @@ def compute_statistics(
     ------
     ImportError
         If monet-stats is not installed.
+
+    Examples
+    --------
+    >>> metrics = ['rmse', 'mb']
+    >>> kwargs = {'obs_var': 'obs', 'mod_var': 'mod', 'weights': 'w'}
+    >>> results = compute_statistics('test_stats', metrics, ds, kwargs)
     """
     logger.info("Computing statistics '%s' for metrics: %s", name, metrics)
 
@@ -80,7 +87,21 @@ def compute_statistics(
 
 
 def _find_metric(module: Any, metric_name: str) -> Any:
-    """Robust discovery of metric functions in monet-stats."""
+    """
+    Robust discovery of metric functions in monet-stats.
+
+    Parameters
+    ----------
+    module : Any
+        The module to search for the metric (usually monet_stats).
+    metric_name : str
+        The name of the metric to find (case-insensitive).
+
+    Returns
+    -------
+    Any or None
+        The metric function if found, else None.
+    """
     if hasattr(module, metric_name):
         return getattr(module, metric_name)
 
@@ -101,15 +122,40 @@ def _execute_metric(
     func: Any,
     kwargs: Dict[str, Any],
 ) -> Union[xr.Dataset, xr.DataArray, pd.Series]:
-    """Execute metric from monet-stats with native Xarray/Dask support."""
+    """
+    Execute metric from monet-stats with native Xarray/Dask support.
+
+    This function orchestrates the execution by resolving weights and
+    dimensions, and checking for native backend support via inspection.
+
+    Parameters
+    ----------
+    data : xr.Dataset or xr.DataArray or pd.DataFrame
+        The data object to process.
+    func : Any
+        The metric function to execute.
+    kwargs : Dict[str, Any]
+        Parameters for the metric execution, including obs/mod variable names
+        and weighting options.
+
+    Returns
+    -------
+    xr.Dataset or xr.DataArray or pd.Series
+        The computed metric result.
+
+    Notes
+    -----
+    Aero Protocol: Preserves Dask laziness and ensures backend-agnostic behavior.
+    """
     import monet_stats
 
     obs_var = kwargs.get("obs_var", "obs")
     mod_var = kwargs.get("mod_var", "mod")
     weights = kwargs.get("weights")
+    dim = kwargs.get("dim")
 
     # Filter out MDT-specific keys for the standard metric call
-    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights"]}
+    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights", "dim"]}
 
     if isinstance(data, (xr.Dataset, xr.DataArray)):
         # 1. Extract Target Data
@@ -120,45 +166,56 @@ def _execute_metric(
             target_obs = None  # Not used for single DataArray metrics
             target_mod = data
 
-        # 2. Weighted Logic (Aero Protocol + monet-stats backend)
+        # 2. Resolve Weights and Dimensions
+        w = None
         if weights is not None:
-            # Resolve weights
-            if isinstance(weights, str) and isinstance(data, xr.Dataset) and weights in data:
-                w = data[weights]
-            elif isinstance(weights, str) and isinstance(data, xr.DataArray) and weights in data.coords:
-                w = data.coords[weights]
+            if isinstance(weights, str):
+                if isinstance(data, xr.Dataset) and weights in data:
+                    w = data[weights]
+                elif isinstance(data, xr.DataArray) and weights in data.coords:
+                    w = data.coords[weights]
             else:
                 w = weights
 
-            # Map 'dim' keyword to 'lat_dim'/'lon_dim' for weighted_spatial_mean
-            w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
-            search_dims = call_kwargs.get("dim")
-            if isinstance(search_dims, str):
-                search_dims = [search_dims]
+        # Resolve axis/dim for monet-stats (standardizing on 'axis' for metrics)
+        axis = dim
+        if axis is None:
+            # Try to discover spatial dims if none provided
+            lat_dim, lon_dim = discover_spatial_dims(data)
+            axis = [d for d in [lat_dim, lon_dim] if d is not None]
+            if not axis:
+                axis = None
 
-            lat_dim, lon_dim = discover_spatial_dims(data, dims=search_dims)
-            if lat_dim and "lat_dim" not in w_kwargs:
-                w_kwargs["lat_dim"] = lat_dim
-            if lon_dim and "lon_dim" not in w_kwargs:
-                w_kwargs["lon_dim"] = lon_dim
+        # Check function signature for native support
+        sig = inspect.signature(func)
+        has_weights = "weights" in sig.parameters
+        axis_param = "axis" if "axis" in sig.parameters else ("dim" if "dim" in sig.parameters else None)
 
-            # Push weighted reductions through monet-stats engine
-            # Orchestrator Rule: Avoid logic in MDT, use monet_stats directly.
-            # Currently, many monet-stats metrics don't accept 'weights' directly,
-            # so we use weighted_spatial_mean as the delegation engine.
+        # 3. Weighted Logic (Aero Protocol + monet-stats backend)
+        if w is not None:
+            if has_weights:
+                # Direct call if metric supports weights natively
+                if axis_param:
+                    call_kwargs[axis_param] = axis
+                if target_obs is not None:
+                    return func(target_obs, target_mod, weights=w, **call_kwargs)
+                return func(target_mod, weights=w, **call_kwargs)
+
+            # Orchestrator Fallback for metrics without native weights support
             metric_name = getattr(func, "__name__", "").upper()
-            if metric_name == "MB" and target_obs is not None:
-                return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
-            elif metric_name == "MAE" and target_obs is not None:
-                return monet_stats.weighted_spatial_mean(abs(target_mod - target_obs), weights=w, **w_kwargs)
-            elif metric_name == "MSE" and target_obs is not None:
-                return monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
-            elif metric_name == "RMSE" and target_obs is not None:
+            w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
+
+            # Map axis to lat_dim/lon_dim for weighted_spatial_mean fallback
+            lat_d, lon_d = discover_spatial_dims(data, dims=axis if isinstance(axis, list) else None)
+            if lat_d and "lat_dim" not in w_kwargs:
+                w_kwargs["lat_dim"] = lat_d
+            if lon_d and "lon_dim" not in w_kwargs:
+                w_kwargs["lon_dim"] = lon_d
+
+            if metric_name == "RMSE" and target_obs is not None:
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
                 return np.sqrt(mse)
             elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
-                # Delegate to monet_stats.weighted_spatial_mean for component calculation
-                # to maintain the "MDT is an Orchestrator" rule.
                 mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
                 mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
 
@@ -171,10 +228,18 @@ def _execute_metric(
 
                 return cov / np.sqrt(var_mod * var_obs)
 
-        # 3. Standard Fallback
-        if isinstance(data, xr.Dataset):
+            logger.warning(
+                "Metric '%s' does not support weights natively and no manual fallback is implemented. Using unweighted.",
+                metric_name,
+            )
+
+        # 4. Standard Fallback (Unweighted or natively supported axis)
+        if axis_param:
+            call_kwargs[axis_param] = axis
+
+        if target_obs is not None:
             return func(target_obs, target_mod, **call_kwargs)
-        return func(data, **call_kwargs)
+        return func(target_mod, **call_kwargs)
 
     elif isinstance(data, pd.DataFrame):
         obs = data[obs_var]
