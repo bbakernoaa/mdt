@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import xarray as xr
+
 from mdt.tasks.reductions import calculate_reduction, spatial_mean
 
 
