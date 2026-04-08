@@ -136,6 +136,7 @@ def test_chunking_optimization_aero_protocol(mocker):
     # 2. Mock monet_stats
     import sys
     from unittest.mock import MagicMock
+
     mock_monet_stats = MagicMock()
     mocker.patch.dict(sys.modules, {"monet_stats": mock_monet_stats})
 
