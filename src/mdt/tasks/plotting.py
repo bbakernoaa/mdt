@@ -44,6 +44,16 @@ def generate_plot(
     """
     logger.info("Generating plot '%s' [Track %s] of type: %s", name, track, plot_type)
 
+    # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested or Auto)
+    chunks = kwargs.pop("chunks", None)
+    if chunks is not None and isinstance(input_data, (xr.Dataset, xr.DataArray)):
+        import monet_stats
+
+        if chunks == "auto":
+            chunks = monet_stats.get_chunk_recommendation(input_data)
+            logger.info("Auto-chunking recommended for plotting: %s", chunks)
+        input_data = input_data.chunk(chunks)
+
     if track == "A":
         return _generate_static_plot(name, plot_type, input_data, kwargs)
     elif track == "B":

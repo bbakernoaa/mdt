@@ -54,16 +54,19 @@ def pair_data(
     logger.info("Pairing data '%s' using method '%s'", name, method)
 
     import monet
+    import monet_stats
 
-    # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested)
+    # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested or Auto)
     chunks = kwargs.get("chunks")
     if chunks is not None:
         if isinstance(source_data, (xr.Dataset, xr.DataArray)):
-            source_data = source_data.chunk(chunks)
-            source_data = update_history(source_data, f"Optimized source chunking with: {chunks}")
+            s_chunks = monet_stats.get_chunk_recommendation(source_data) if chunks == "auto" else chunks
+            source_data = source_data.chunk(s_chunks)
+            source_data = update_history(source_data, f"Optimized source chunking with: {s_chunks}")
         if isinstance(target_data, (xr.Dataset, xr.DataArray)):
-            target_data = target_data.chunk(chunks)
-            target_data = update_history(target_data, f"Optimized target chunking with: {chunks}")
+            t_chunks = monet_stats.get_chunk_recommendation(target_data) if chunks == "auto" else chunks
+            target_data = target_data.chunk(t_chunks)
+            target_data = update_history(target_data, f"Optimized target chunking with: {t_chunks}")
 
     try:
         # Use the unified monet.pair interface

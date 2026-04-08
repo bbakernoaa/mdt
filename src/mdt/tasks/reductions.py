@@ -87,9 +87,11 @@ def calculate_reduction(
     logger.info("Calculating reduction: %s over dim: %s", method, dim)
     method_str = method
 
-    # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested)
+    # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested or Auto)
     chunks = kwargs.get("chunks")
     if chunks is not None and isinstance(obj, (xr.Dataset, xr.DataArray)):
+        if chunks == "auto":
+            chunks = monet_stats.get_chunk_recommendation(obj)
         obj = obj.chunk(chunks)
         obj = update_history(obj, f"Optimized chunking with: {chunks}")
 

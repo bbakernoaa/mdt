@@ -52,7 +52,7 @@ def demo_weighted_visualization():
         "obs_var": "obs",
         "mod_var": "mod",
         "weights": "w",
-        "chunks": {"lat": 45, "lon": 90},  # Task-level optimization
+        "chunks": "auto",  # Automated task-level optimization
     }
 
     print("Step 1: Computing weighted statistics (The Logic)...")
@@ -101,7 +101,7 @@ def demo_weighted_visualization():
 
     print("\n--- Aero Protocol Visualization Demo Complete ---")
     print("Logic: Weighted MB/MAE delegated to monet-stats orchestrator.")
-    print("Optimization: Task-level re-chunking applied for performance.")
+    print("Optimization: Automated task-level re-chunking applied for performance.")
     print("Track A: Static map with Cartopy for scientific reports.")
     print("Track B: Interactive map for rapid visual inspection.")
 

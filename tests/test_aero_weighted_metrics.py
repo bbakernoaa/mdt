@@ -177,5 +177,54 @@ def test_chunking_optimization_aero_protocol(mocker):
     print("\n✅ Aero Protocol Chunking Optimization Verified: Task-level re-chunking applied.")
 
 
+def test_auto_chunking_aero_protocol(mocker):
+    """
+    Verify that passing 'chunks="auto"' uses recommendations from monet-stats.
+
+    (Aero Protocol Requirement)
+
+    Parameters
+    ----------
+    mocker : pytest_mock.plugin.MockerFixture
+        The pytest-mock fixture.
+
+    Returns
+    -------
+    None
+    """
+    # 1. Setup Data
+    # Use a dataset without initial chunking to avoid history noise
+    ds = xr.Dataset(
+        {
+            "obs": (("lat", "lon"), np.random.rand(10, 20)),
+            "mod": (("lat", "lon"), np.random.rand(10, 20)),
+        },
+        coords={"lat": np.arange(10), "lon": np.arange(20)},
+    )
+
+    # 2. Mock monet_stats.get_chunk_recommendation
+    # Patch it in the statistics module where it's used
+    rec = {"lat": 2, "lon": 4}
+    mocker.patch("mdt.tasks.statistics.monet_stats.get_chunk_recommendation", return_value=rec)
+
+    # Mock _find_metric
+    def dummy_func(obs, mod, **kwargs):
+        return obs.mean()
+
+    dummy_func.__name__ = "MEAN"
+    mocker.patch("mdt.tasks.statistics._find_metric", return_value=dummy_func)
+
+    # 3. Execute with Auto-Chunking
+    kwargs = {"chunks": "auto"}
+    results = compute_statistics("test_auto", ["MEAN"], ds, kwargs)
+
+    # 4. Assertions
+    res = results["MEAN"]
+    # Check if the recommendation was used in provenance
+    assert "Optimized chunking with: {'lat': 2, 'lon': 4}" in res.attrs["history"]
+
+    print("\n✅ Aero Protocol Auto-Chunking Verified: 'auto' correctly triggers recommended layout.")
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

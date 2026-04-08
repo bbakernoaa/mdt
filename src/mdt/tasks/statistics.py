@@ -2,6 +2,7 @@ import inspect
 import logging
 from typing import Any, Dict, List, Union
 
+import monet_stats
 import pandas as pd
 import xarray as xr
 
@@ -156,8 +157,6 @@ def _execute_metric(
     -----
     Aero Protocol: Preserves Dask laziness and ensures backend-agnostic behavior.
     """
-    import monet_stats
-
     obs_var = kwargs.get("obs_var", "obs")
     mod_var = kwargs.get("mod_var", "mod")
     weights = kwargs.get("weights")
@@ -167,9 +166,12 @@ def _execute_metric(
     call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights", "dim", "chunks"]}
 
     if isinstance(data, (xr.Dataset, xr.DataArray)):
-        # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested)
+        # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested or Auto)
         chunks = kwargs.get("chunks")
         if chunks is not None:
+            if chunks == "auto":
+                chunks = monet_stats.get_chunk_recommendation(data)
+                logger.info("Auto-chunking recommended: %s", chunks)
             data = data.chunk(chunks)
 
         # 1. Extract Target Data
