@@ -55,6 +55,16 @@ def pair_data(
 
     import monet
 
+    # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested)
+    chunks = kwargs.get("chunks")
+    if chunks is not None:
+        if isinstance(source_data, (xr.Dataset, xr.DataArray)):
+            source_data = source_data.chunk(chunks)
+            source_data = update_history(source_data, f"Optimized source chunking with: {chunks}")
+        if isinstance(target_data, (xr.Dataset, xr.DataArray)):
+            target_data = target_data.chunk(chunks)
+            target_data = update_history(target_data, f"Optimized target chunking with: {chunks}")
+
     try:
         # Use the unified monet.pair interface
         # This handles both Xarray-to-Xarray and Xarray-to-DataFrame pairing,

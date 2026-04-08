@@ -68,7 +68,7 @@ def calculate_reduction(
         If True, forces area-weighted spatial mean when method='mean'.
     **kwargs : Any
         Additional arguments passed to the xarray reduction method or
-        `monet_stats.weighted_spatial_mean`.
+        `monet_stats.weighted_spatial_mean`. Common keys include `chunks`.
 
     Returns
     -------
@@ -79,9 +79,19 @@ def calculate_reduction(
     ------
     ValueError
         If an unsupported reduction method is provided.
+
+    Examples
+    --------
+    >>> ds_reduced = calculate_reduction(ds, method='mean', dim=['lat', 'lon'], chunks={'time': 1})
     """
     logger.info("Calculating reduction: %s over dim: %s", method, dim)
     method_str = method
+
+    # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested)
+    chunks = kwargs.get("chunks")
+    if chunks is not None and isinstance(obj, (xr.Dataset, xr.DataArray)):
+        obj = obj.chunk(chunks)
+        obj = update_history(obj, f"Optimized chunking with: {chunks}")
 
     # 1. Specialized Case: Area-Weighted Spatial Mean
     is_spatial = False

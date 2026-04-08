@@ -11,7 +11,8 @@ def demo_weighted_visualization():
 
     This script generates synthetic spatial data, computes weighted statistics
     adhering to the Aero Protocol, and demonstrates both Track A (Static) and
-    Track B (Interactive) visualization capabilities.
+    Track B (Interactive) visualization capabilities. It also showcases
+    task-level chunking optimization for large-scale data.
 
     Returns
     -------
@@ -41,19 +42,25 @@ def demo_weighted_visualization():
             "w": (("lat", "lon"), weights),
         },
         coords={"lat": lat, "lon": lon},
-    )
+    ).chunk({"lat": 180, "lon": 360})  # Initial chunk
 
-    # 2. Compute Weighted Statistics (The Logic)
+    # 2. Compute Weighted Statistics (The Logic) with Optimization
     # We compute MB (Mean Bias) and MAE (Mean Absolute Error)
+    # We optimize chunking at the task level for performance.
     metrics = ["MB", "MAE"]
-    kwargs = {"obs_var": "obs", "mod_var": "mod", "weights": "w"}
+    kwargs = {
+        "obs_var": "obs",
+        "mod_var": "mod",
+        "weights": "w",
+        "chunks": {"lat": 45, "lon": 90},  # Task-level optimization
+    }
 
     print("Step 1: Computing weighted statistics (The Logic)...")
-    # Note: Requires monet-stats dev branch for full functionality
     try:
         results = compute_statistics("demo_stats", metrics, ds, kwargs)
         for m, val in results.items():
             print(f"  - {m}: {float(val):.4f}")
+            print(f"    History: {val.attrs.get('history', 'N/A')}")
     except Exception as e:
         print(f"  - Logic execution skipped or failed: {e}")
 
@@ -94,6 +101,7 @@ def demo_weighted_visualization():
 
     print("\n--- Aero Protocol Visualization Demo Complete ---")
     print("Logic: Weighted MB/MAE computed via backend-agnostic orchestrator.")
+    print("Optimization: Task-level re-chunking applied for performance.")
     print("Track A: Static map with Cartopy for scientific reports.")
     print("Track B: Interactive map for rapid visual inspection.")
 

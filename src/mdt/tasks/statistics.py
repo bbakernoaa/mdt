@@ -165,9 +165,14 @@ def _execute_metric(
     dim = kwargs.get("dim")
 
     # Filter out MDT-specific keys for the standard metric call
-    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights", "dim"]}
+    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights", "dim", "chunks"]}
 
     if isinstance(data, (xr.Dataset, xr.DataArray)):
+        # Optional Chunking Optimization (Aero Protocol Rule 1.3 - User-requested)
+        chunks = kwargs.get("chunks")
+        if chunks is not None:
+            data = data.chunk(chunks)
+
         # 1. Extract Target Data
         if isinstance(data, xr.Dataset):
             target_obs = data[obs_var]
@@ -202,58 +207,69 @@ def _execute_metric(
         axis_param = "axis" if "axis" in sig.parameters else ("dim" if "dim" in sig.parameters else None)
 
         # 3. Weighted Logic (Aero Protocol + monet-stats backend)
+        result = None
         if w is not None:
             if has_weights:
                 # Direct call if metric supports weights natively
                 if axis_param:
                     call_kwargs[axis_param] = axis
                 if target_obs is not None:
-                    return func(target_obs, target_mod, weights=w, **call_kwargs)
-                return func(target_mod, weights=w, **call_kwargs)
+                    result = func(target_obs, target_mod, weights=w, **call_kwargs)
+                else:
+                    result = func(target_mod, weights=w, **call_kwargs)
 
-            # Orchestrator Fallback for metrics without native weights support
-            metric_name = getattr(func, "__name__", "").upper()
-            w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
+            if result is None:
+                # Orchestrator Fallback for metrics without native weights support
+                metric_name = getattr(func, "__name__", "").upper()
+                w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
 
-            # Map axis to lat_dim/lon_dim for weighted_spatial_mean fallback
-            lat_d, lon_d = discover_spatial_dims(data, dims=axis if isinstance(axis, list) else None)
-            if lat_d and "lat_dim" not in w_kwargs:
-                w_kwargs["lat_dim"] = lat_d
-            if lon_d and "lon_dim" not in w_kwargs:
-                w_kwargs["lon_dim"] = lon_d
+                # Map axis to lat_dim/lon_dim for weighted_spatial_mean fallback
+                lat_d, lon_d = discover_spatial_dims(data, dims=axis if isinstance(axis, list) else None)
+                if lat_d and "lat_dim" not in w_kwargs:
+                    w_kwargs["lat_dim"] = lat_d
+                if lon_d and "lon_dim" not in w_kwargs:
+                    w_kwargs["lon_dim"] = lon_d
 
-            if metric_name == "RMSE" and target_obs is not None:
-                mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
-                return np.sqrt(mse)
-            elif metric_name in ["MB", "BIAS", "MBIAS"] and target_obs is not None:
-                return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
-            elif metric_name == "MAE" and target_obs is not None:
-                return monet_stats.weighted_spatial_mean(np.abs(target_mod - target_obs), weights=w, **w_kwargs)
-            elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
-                mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
-                mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
+                if metric_name == "RMSE" and target_obs is not None:
+                    mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
+                    result = np.sqrt(mse)
+                elif metric_name in ["MB", "BIAS", "MBIAS"] and target_obs is not None:
+                    result = monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
+                elif metric_name == "MAE" and target_obs is not None:
+                    result = monet_stats.weighted_spatial_mean(np.abs(target_mod - target_obs), weights=w, **w_kwargs)
+                elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
+                    mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
+                    mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
 
-                dev_mod = target_mod - mu_mod
-                dev_obs = target_obs - mu_obs
+                    dev_mod = target_mod - mu_mod
+                    dev_obs = target_obs - mu_obs
 
-                cov = monet_stats.weighted_spatial_mean(dev_mod * dev_obs, weights=w, **w_kwargs)
-                var_mod = monet_stats.weighted_spatial_mean(dev_mod**2, weights=w, **w_kwargs)
-                var_obs = monet_stats.weighted_spatial_mean(dev_obs**2, weights=w, **w_kwargs)
+                    cov = monet_stats.weighted_spatial_mean(dev_mod * dev_obs, weights=w, **w_kwargs)
+                    var_mod = monet_stats.weighted_spatial_mean(dev_mod**2, weights=w, **w_kwargs)
+                    var_obs = monet_stats.weighted_spatial_mean(dev_obs**2, weights=w, **w_kwargs)
 
-                return cov / np.sqrt(var_mod * var_obs)
+                    result = cov / np.sqrt(var_mod * var_obs)
 
-            logger.warning(
-                "Metric '%s' does not support weights natively and no manual fallback is implemented. Using unweighted.",
-                metric_name,
-            )
+            if result is None:
+                logger.warning(
+                    "Metric '%s' does not support weights natively and no manual fallback is implemented. Using unweighted.",
+                    getattr(func, "__name__", "").upper(),
+                )
 
         # 4. Standard Fallback (Unweighted or natively supported axis)
-        if axis_param:
-            call_kwargs[axis_param] = axis
+        if result is None:
+            if axis_param:
+                call_kwargs[axis_param] = axis
 
-        if target_obs is not None:
-            return func(target_obs, target_mod, **call_kwargs)
-        return func(target_mod, **call_kwargs)
+            if target_obs is not None:
+                result = func(target_obs, target_mod, **call_kwargs)
+            else:
+                result = func(target_mod, **call_kwargs)
+
+        # Apply provenance for optimization if it happened and survived
+        if chunks is not None and isinstance(result, (xr.Dataset, xr.DataArray)):
+            result = update_history(result, f"Optimized chunking with: {chunks}")
+        return result
 
     elif isinstance(data, pd.DataFrame):
         obs = data[obs_var]
