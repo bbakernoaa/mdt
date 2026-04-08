@@ -100,7 +100,7 @@ def demo_weighted_visualization():
         print(f"    [Track B Error] {e} (Requires hvplot/geoviews)")
 
     print("\n--- Aero Protocol Visualization Demo Complete ---")
-    print("Logic: Weighted MB/MAE computed via backend-agnostic orchestrator.")
+    print("Logic: Weighted MB/MAE delegated to monet-stats orchestrator.")
     print("Optimization: Task-level re-chunking applied for performance.")
     print("Track A: Static map with Cartopy for scientific reports.")
     print("Track B: Interactive map for rapid visual inspection.")

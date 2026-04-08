@@ -59,17 +59,25 @@ def test_weighted_mb_mae_aero_protocol(mocker):
     mock_monet_stats.weighted_spatial_mean.side_effect = mock_weighted_mean
     mocker.patch.dict(sys.modules, {"monet_stats": mock_monet_stats})
 
-    # Mock _find_metric to return "dummy" functions without 'weights' in signature
-    # so it triggers the orchestrator fallback.
-    def mb_dummy(obs, mod):
-        pass
+    # Mock _find_metric to return "dummy" functions.
+    # MB dummy HAS weights in signature (native support)
+    def mb_dummy(obs, mod, axis=None, weights=None, **kwargs):
+        if weights is not None:
+            return (mod - obs) * weights.mean()  # Dummy calc
+        return (mod - obs).mean()
 
     mb_dummy.__name__ = "MB"
 
-    def mae_dummy(obs, mod):
-        pass
+    # MAE dummy DOES NOT have weights (triggers search for WDMAE)
+    def mae_dummy(obs, mod, axis=None, **kwargs):
+        return abs(mod - obs).mean()
 
     mae_dummy.__name__ = "MAE"
+
+    def wdmae_dummy(obs, mod, axis=None, **kwargs):
+        return abs(mod - obs).mean() * 1.1  # Distinct dummy calc
+
+    wdmae_dummy.__name__ = "WDMAE"
 
     def find_metric_side_effect(module, name):
         """Mock finding metric functions."""
@@ -77,6 +85,8 @@ def test_weighted_mb_mae_aero_protocol(mocker):
             return mb_dummy
         if name.upper() == "MAE":
             return mae_dummy
+        if name.upper() == "WDMAE":
+            return wdmae_dummy
         return None
 
     mocker.patch("mdt.tasks.statistics._find_metric", side_effect=find_metric_side_effect)

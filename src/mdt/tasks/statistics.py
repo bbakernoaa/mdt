@@ -2,7 +2,6 @@ import inspect
 import logging
 from typing import Any, Dict, List, Union
 
-import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -206,61 +205,45 @@ def _execute_metric(
         has_weights = "weights" in sig.parameters
         axis_param = "axis" if "axis" in sig.parameters else ("dim" if "dim" in sig.parameters else None)
 
-        # 3. Weighted Logic (Aero Protocol + monet-stats backend)
+        # 3. Execution (Orchestrator Rule - Delegate to monet-stats)
         result = None
+
+        # Resolve axis/dim for monet-stats (standardizing on 'axis' for metrics)
+        if axis_param:
+            call_kwargs[axis_param] = axis
+
+        # Handle Weighted Calculations
         if w is not None:
             if has_weights:
                 # Direct call if metric supports weights natively
-                if axis_param:
-                    call_kwargs[axis_param] = axis
                 if target_obs is not None:
                     result = func(target_obs, target_mod, weights=w, **call_kwargs)
                 else:
                     result = func(target_mod, weights=w, **call_kwargs)
-
-            if result is None:
-                # Orchestrator Fallback for metrics without native weights support
+            else:
+                # Search for weighted counterpart in monet-stats (e.g., MB -> WDMB)
                 metric_name = getattr(func, "__name__", "").upper()
-                w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
+                wd_name = f"WD{metric_name}"
+                wd_func = _find_metric(monet_stats, wd_name)
 
-                # Map axis to lat_dim/lon_dim for weighted_spatial_mean fallback
-                lat_d, lon_d = discover_spatial_dims(data, dims=axis if isinstance(axis, list) else None)
-                if lat_d and "lat_dim" not in w_kwargs:
-                    w_kwargs["lat_dim"] = lat_d
-                if lon_d and "lon_dim" not in w_kwargs:
-                    w_kwargs["lon_dim"] = lon_d
+                if wd_func:
+                    logger.debug("Delegating to weighted counterpart: %s", wd_name)
+                    wd_sig = inspect.signature(wd_func)
+                    if "weights" in wd_sig.parameters:
+                        call_kwargs["weights"] = w
 
-                if metric_name == "RMSE" and target_obs is not None:
-                    mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
-                    result = np.sqrt(mse)
-                elif metric_name in ["MB", "BIAS", "MBIAS"] and target_obs is not None:
-                    result = monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
-                elif metric_name == "MAE" and target_obs is not None:
-                    result = monet_stats.weighted_spatial_mean(np.abs(target_mod - target_obs), weights=w, **w_kwargs)
-                elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
-                    mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
-                    mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
+                    if target_obs is not None:
+                        result = wd_func(target_obs, target_mod, **call_kwargs)
+                    else:
+                        result = wd_func(target_mod, **call_kwargs)
+                else:
+                    logger.warning(
+                        "Metric '%s' does not support weights natively and no WD counterpart found in monet-stats.",
+                        metric_name,
+                    )
 
-                    dev_mod = target_mod - mu_mod
-                    dev_obs = target_obs - mu_obs
-
-                    cov = monet_stats.weighted_spatial_mean(dev_mod * dev_obs, weights=w, **w_kwargs)
-                    var_mod = monet_stats.weighted_spatial_mean(dev_mod**2, weights=w, **w_kwargs)
-                    var_obs = monet_stats.weighted_spatial_mean(dev_obs**2, weights=w, **w_kwargs)
-
-                    result = cov / np.sqrt(var_mod * var_obs)
-
-            if result is None:
-                logger.warning(
-                    "Metric '%s' does not support weights natively and no manual fallback is implemented. Using unweighted.",
-                    getattr(func, "__name__", "").upper(),
-                )
-
-        # 4. Standard Fallback (Unweighted or natively supported axis)
+        # 4. Standard Call (Unweighted or Fallback)
         if result is None:
-            if axis_param:
-                call_kwargs[axis_param] = axis
-
             if target_obs is not None:
                 result = func(target_obs, target_mod, **call_kwargs)
             else:
