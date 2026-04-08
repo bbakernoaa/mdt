@@ -101,6 +101,11 @@ def _find_metric(module: Any, metric_name: str) -> Any:
     -------
     Any or None
         The metric function if found, else None.
+
+    Examples
+    --------
+    >>> import monet_stats
+    >>> func = _find_metric(monet_stats, 'rmse')
     """
     if hasattr(module, metric_name):
         return getattr(module, metric_name)
@@ -142,6 +147,11 @@ def _execute_metric(
     -------
     xr.Dataset or xr.DataArray or pd.Series
         The computed metric result.
+
+    Examples
+    --------
+    >>> import monet_stats
+    >>> res = _execute_metric(ds, monet_stats.rmse, {'obs_var': 'o', 'mod_var': 'm'})
 
     Notes
     -----
@@ -215,6 +225,10 @@ def _execute_metric(
             if metric_name == "RMSE" and target_obs is not None:
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
                 return np.sqrt(mse)
+            elif metric_name in ["MB", "BIAS", "MBIAS"] and target_obs is not None:
+                return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
+            elif metric_name == "MAE" and target_obs is not None:
+                return monet_stats.weighted_spatial_mean(np.abs(target_mod - target_obs), weights=w, **w_kwargs)
             elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
                 mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
                 mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
