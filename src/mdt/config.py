@@ -71,24 +71,48 @@ class ConfigParser:
         return self.config.get("plots", {})
 
     @property
+    def orchestrator(self):
+        """str: The orchestrator backend name from the execution section, defaults to 'prefect'."""
+        return self.execution.get("orchestrator", "prefect")
+
+    @property
     def execution(self):
         """
         Retrieves the execution configuration, which can define multiple clusters.
 
         If not specified, defaults to a single local cluster named 'compute'.
 
+        When the orchestrator is ``"ecflow"``, the following ecFlow-specific
+        keys are accessible directly from the returned dict:
+
+        - ``ecflow_host`` — ecFlow server hostname (default ``"localhost"``)
+        - ``ecflow_port`` — ecFlow server port (default ``3141``)
+        - ``suite_name``  — ecFlow suite name (default ``"mdt"``)
+        - ``task_script_dir`` — directory for generated ``.ecf`` wrapper
+          scripts (default ``"./ecflow_tasks/"``)
+
+        These keys are read by
+        :class:`~mdt.ecflow_engine.EcFlowEngine` at construction time.
+
         Returns
         -------
         dict
-            The execution configuration section.
+            The execution configuration section, including any
+            orchestrator-specific keys defined in the YAML.
         """
         exec_cfg = self.config.get("execution", {})
         if not exec_cfg:
             return {"default_cluster": "compute", "clusters": {"compute": {"mode": "local"}}}
 
-        # Backwards compatibility: if they just provided 'mode', wrap it in a 'compute' cluster
+        # Backwards compatibility: if they just provided 'mode', wrap it in a 'compute' cluster.
+        # Preserve any non-cluster keys (e.g. orchestrator, ecflow_host, etc.)
+        # at the top level so engine implementations can still access them.
         if "mode" in exec_cfg and "clusters" not in exec_cfg:
-            return {"default_cluster": "compute", "clusters": {"compute": exec_cfg}}
+            cluster_cfg = {k: v for k, v in exec_cfg.items() if k == "mode" or k == "workers"}
+            result = {k: v for k, v in exec_cfg.items() if k not in ("mode", "workers")}
+            result["default_cluster"] = "compute"
+            result["clusters"] = {"compute": cluster_cfg if cluster_cfg else exec_cfg}
+            return result
 
         # Ensure default_cluster is set if clusters are defined
         if "clusters" in exec_cfg and "default_cluster" not in exec_cfg:

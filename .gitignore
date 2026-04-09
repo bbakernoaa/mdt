@@ -154,3 +154,10 @@ cython_debug/
 # Local data / logs
 *.nc
 *.log
+
+# Kiro
+.kiro
+
+# test artifacts
+*.png
+*.csv

@@ -5,9 +5,8 @@ import logging
 import dask
 import dask.distributed
 import networkx as nx
-from prefect import flow, get_run_logger, task
-from prefect_dask.task_runners import DaskTaskRunner
 
+from mdt.engine_registry import Engine
 from mdt.hpc import HPCProfileFactory
 from mdt.tasks.data import load_data
 from mdt.tasks.pairing import combine_paired_data, pair_data
@@ -17,134 +16,7 @@ from mdt.tasks.statistics import compute_statistics
 logger = logging.getLogger(__name__)
 
 
-# Prefect Task Wrappers
-@task(name="Load Data")
-def prefect_load_data(name, dataset_type, kwargs):
-    """
-    Prefect wrapper for the load_data function.
-
-    Parameters
-    ----------
-    name : str
-        The configuration identifier for this data.
-    dataset_type : str
-        The name of the monetio dataset (e.g., 'cmaq', 'aeronet', 'gcafs').
-    kwargs : dict
-        Additional keyword arguments to pass to the dataset reader.
-
-    Returns
-    -------
-    xarray.Dataset or pandas.DataFrame
-        The loaded data object.
-    """
-    logger = get_run_logger()
-    logger.info(f"Loading data: {name} of type {dataset_type}")
-    return load_data(name, dataset_type, kwargs)
-
-
-@task(name="Pair Data")
-def prefect_pair_data(name, method, source_data, target_data, kwargs):
-    """
-    Prefect wrapper for the pair_data function.
-
-    Parameters
-    ----------
-    name : str
-        Identifier for this pairing task.
-    method : str
-        The method to use (e.g., 'interpolate', 'regrid', 'point_to_grid').
-    source_data : xarray.Dataset or pandas.DataFrame
-        The source data object (typically a model).
-    target_data : xarray.Dataset or pandas.DataFrame
-        The target data object or grid.
-    kwargs : dict
-        Additional arguments to pass to the pairing function.
-
-    Returns
-    -------
-    xarray.Dataset or pandas.DataFrame
-        The paired dataset object.
-    """
-    logger = get_run_logger()
-    logger.info(f"Pairing data: {name} using {method}")
-    return pair_data(name, method, source_data, target_data, kwargs)
-
-
-@task(name="Combine Paired Data")
-def prefect_combine_paired_data(paired_data, dim="model"):
-    """
-    Prefect wrapper for the combine_paired_data function.
-
-    Parameters
-    ----------
-    paired_data : dict
-        A dictionary mapping model names to paired data objects.
-    dim : str
-        The dimension to combine along.
-
-    Returns
-    -------
-    pandas.DataFrame or xarray.Dataset
-        The combined dataset.
-    """
-    logger = get_run_logger()
-    logger.info(f"Combining {len(paired_data)} paired datasets along '{dim}'")
-    return combine_paired_data(paired_data, dim=dim)
-
-
-@task(name="Compute Statistics")
-def prefect_compute_statistics(name, metrics, input_data, kwargs):
-    """
-    Prefect wrapper for the compute_statistics function.
-
-    Parameters
-    ----------
-    name : str
-        Identifier for this statistics task.
-    metrics : list of str
-        A list of metric names to compute (e.g., ['rmse', 'bias', 'corr']).
-    input_data : pandas.DataFrame or xarray.Dataset
-        The paired dataset to analyze.
-    kwargs : dict
-        Additional arguments passed to the monet_stats functions.
-
-    Returns
-    -------
-    dict
-        A mapping of computed metric names to their results.
-    """
-    logger = get_run_logger()
-    logger.info(f"Computing statistics: {name} for metrics {metrics}")
-    return compute_statistics(name, metrics, input_data, kwargs)
-
-
-@task(name="Generate Plot")
-def prefect_generate_plot(name, plot_type, input_data, kwargs):
-    """
-    Prefect wrapper for the generate_plot function.
-
-    Parameters
-    ----------
-    name : str
-        Identifier for this plotting task.
-    plot_type : str
-        Type of plot (e.g., 'spatial', 'scatter', 'timeseries').
-    input_data : xarray.Dataset, pandas.DataFrame, or dict
-        The data to plot.
-    kwargs : dict
-        Additional keyword arguments to pass to the plotting function.
-
-    Returns
-    -------
-    object
-        The plot or figure object.
-    """
-    logger = get_run_logger()
-    logger.info(f"Generating plot: {name} of type {plot_type}")
-    return generate_plot(name, plot_type, input_data, kwargs)
-
-
-class PrefectEngine:
+class PrefectEngine(Engine):
     """Executes a NetworkX DAG as a Prefect Flow."""
 
     def __init__(self, dag, config):
@@ -257,6 +129,41 @@ class PrefectEngine:
             A dictionary mapping node IDs from the task graph to the Dask futures
             representing their completion state and results.
         """
+        from prefect import flow, get_run_logger, task
+        from prefect_dask.task_runners import DaskTaskRunner
+
+        # Prefect Task Wrappers — defined here so the @task decorator is only
+        # evaluated when Prefect is actually installed and execute() is called.
+
+        @task(name="Load Data")
+        def prefect_load_data(name, dataset_type, kwargs):
+            logger = get_run_logger()
+            logger.info(f"Loading data: {name} of type {dataset_type}")
+            return load_data(name, dataset_type, kwargs)
+
+        @task(name="Pair Data")
+        def prefect_pair_data(name, method, source_data, target_data, kwargs):
+            logger = get_run_logger()
+            logger.info(f"Pairing data: {name} using {method}")
+            return pair_data(name, method, source_data, target_data, kwargs)
+
+        @task(name="Combine Paired Data")
+        def prefect_combine_paired_data(paired_data, dim="model"):
+            logger = get_run_logger()
+            logger.info(f"Combining {len(paired_data)} paired datasets along '{dim}'")
+            return combine_paired_data(paired_data, dim=dim)
+
+        @task(name="Compute Statistics")
+        def prefect_compute_statistics(name, metrics, input_data, kwargs):
+            logger = get_run_logger()
+            logger.info(f"Computing statistics: {name} for metrics {metrics}")
+            return compute_statistics(name, metrics, input_data, kwargs)
+
+        @task(name="Generate Plot")
+        def prefect_generate_plot(name, plot_type, input_data, kwargs):
+            logger = get_run_logger()
+            logger.info(f"Generating plot: {name} of type {plot_type}")
+            return generate_plot(name, plot_type, input_data, kwargs)
 
         # Define the Prefect flow inline to capture the instance variables
         @flow(name="MDT Verification Workflow")

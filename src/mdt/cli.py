@@ -5,7 +5,7 @@ import logging
 
 from mdt.config import load_config
 from mdt.dag import DAGBuilder
-from mdt.engine import PrefectEngine
+from mdt.engine_registry import EngineRegistry
 
 
 def setup_logging():
@@ -28,6 +28,12 @@ def main():
     # The 'run' command
     run_parser = subparsers.add_parser("run", help="Run a verification workflow from a YAML config.")
     run_parser.add_argument("config_path", type=str, help="Path to the YAML configuration file.")
+    run_parser.add_argument(
+        "--orchestrator",
+        choices=["prefect", "ecflow"],
+        default=None,
+        help="Override the orchestrator backend specified in the YAML configuration.",
+    )
 
     args = parser.parse_args()
 
@@ -42,9 +48,13 @@ def main():
             builder = DAGBuilder(config)
             dag = builder.build()
 
-            # 3. Initialize the Prefect execution engine and run the graph
-            logger.info("Initializing Prefect Execution Engine")
-            engine = PrefectEngine(dag, config)
+            # 3. Resolve orchestrator: CLI arg → YAML config → default ("prefect")
+            orchestrator_name = args.orchestrator or config.orchestrator
+
+            # 4. Initialize the execution engine via the registry and run the graph
+            logger.info(f"Initializing '{orchestrator_name}' execution engine")
+            engine_cls = EngineRegistry.get_engine(orchestrator_name)
+            engine = engine_cls(dag, config)
 
             logger.info("Executing workflow")
             engine.execute()
