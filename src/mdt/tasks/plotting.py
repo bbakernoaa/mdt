@@ -52,8 +52,31 @@ def generate_plot(
         raise ValueError(f"Unknown track '{track}'. Use 'A' (Static) or 'B' (Interactive).")
 
 
-def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
-    """Track A: Static plotting with monet-plots (Matplotlib + Cartopy)."""
+def _generate_static_plot(
+    name: str,
+    plot_type: str,
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]],
+    kwargs: Dict[str, Any],
+) -> Any:
+    """
+    Track A: Static plotting with monet-plots (Matplotlib + Cartopy).
+
+    Parameters
+    ----------
+    name : str
+        The identifier for this plotting task.
+    plot_type : str
+        The type of plot to generate.
+    input_data : Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]]
+        The data to plot.
+    kwargs : Dict[str, Any]
+        Additional keyword arguments for the plotting function.
+
+    Returns
+    -------
+    Any
+        The monet-plots plot object.
+    """
     import monet_plots
 
     savename = kwargs.pop("savename", f"{name}.png")
@@ -78,8 +101,31 @@ def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
     raise NotImplementedError(f"Static plot type '{plot_type}' not yet implemented in mdt orchestrator.")
 
 
-def _generate_interactive_plot(name, plot_type, input_data, kwargs) -> Any:
-    """Track B: Interactive plotting with monet-plots (HvPlot/GeoViews)."""
+def _generate_interactive_plot(
+    name: str,
+    plot_type: str,
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]],
+    kwargs: Dict[str, Any],
+) -> Any:
+    """
+    Track B: Interactive plotting with monet-plots (HvPlot/GeoViews).
+
+    Parameters
+    ----------
+    name : str
+        The identifier for this plotting task.
+    plot_type : str
+        The type of plot to generate.
+    input_data : Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]]
+        The data to plot.
+    kwargs : Dict[str, Any]
+        Additional keyword arguments for the plotting function.
+
+    Returns
+    -------
+    Any
+        The HoloViews plot object.
+    """
     import monet_plots
 
     # Orchestrator Rule: Dispatch to monet_plots class-based API

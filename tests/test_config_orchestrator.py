@@ -3,7 +3,6 @@
 import textwrap
 
 import pytest
-import yaml
 
 from mdt.config import ConfigParser
 

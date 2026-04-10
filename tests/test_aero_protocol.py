@@ -11,6 +11,10 @@ def test_compute_statistics_aero_protocol(mocker):
 
     (Aero Protocol Requirement)
     """
+    import sys
+
+    mocker.patch.dict(sys.modules, {"monet_stats": mocker.MagicMock()})
+
     # 1. Setup Data
     size = 100
     obs_np = np.random.rand(size)
@@ -81,6 +85,9 @@ def test_compute_statistics_pandas_provenance():
 
 def test_compute_statistics_dask_enabled(mocker):
     """Verify that a Dask-enabled metric works when called directly."""
+    import sys
+
+    mocker.patch.dict(sys.modules, {"monet_stats": mocker.MagicMock()})
 
     # 1. A metric function that handles Dask natively
     def dask_enabled_metric(obs, mod, **kwargs):

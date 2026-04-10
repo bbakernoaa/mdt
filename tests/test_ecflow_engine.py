@@ -66,12 +66,14 @@ class TestEcFlowEngineInit:
         """Explicit config values override the defaults."""
         from mdt.ecflow_engine import EcFlowEngine
 
-        cfg = _make_config({
-            "ecflow_host": "ecflow.hpc.local",
-            "ecflow_port": "4000",
-            "suite_name": "my_suite",
-            "task_script_dir": "/tmp/ecf_scripts/",
-        })
+        cfg = _make_config(
+            {
+                "ecflow_host": "ecflow.hpc.local",
+                "ecflow_port": "4000",
+                "suite_name": "my_suite",
+                "task_script_dir": "/tmp/ecf_scripts/",
+            }
+        )
         engine = EcFlowEngine(simple_dag, cfg)
 
         assert engine.host == "ecflow.hpc.local"
@@ -116,6 +118,7 @@ class TestEcFlowEngineLazyImport:
         # Ensure ecflow is NOT importable
         monkeypatch.delitem(sys.modules, "ecflow", raising=False)
         import builtins
+
         _real_import = builtins.__import__
 
         def _block_ecflow(name, *args, **kwargs):
@@ -356,17 +359,11 @@ class TestBuildSuiteTaskCreation:
 
         families = _tracking_ecflow["families"]
         # load family should have add_task called for load_obs and load_model
-        load_calls = [
-            c.args[0]._task_name
-            for c in families["load"].add_task.call_args_list
-        ]
+        load_calls = [c.args[0]._task_name for c in families["load"].add_task.call_args_list]
         assert sorted(load_calls) == ["load_model", "load_obs"]
 
         # pair family should have pair_obs_model
-        pair_calls = [
-            c.args[0]._task_name
-            for c in families["pair"].add_task.call_args_list
-        ]
+        pair_calls = [c.args[0]._task_name for c in families["pair"].add_task.call_args_list]
         assert pair_calls == ["pair_obs_model"]
 
 
@@ -438,6 +435,7 @@ class TestBuildSuiteVariables:
     def test_pair_node_kwargs_serialized(self, _tracking_ecflow, multi_node_dag, _make_config):
         """Pair node kwargs are JSON-serialized."""
         import json
+
         from mdt.ecflow_engine import EcFlowEngine
 
         engine = EcFlowEngine(multi_node_dag, _make_config())
@@ -449,6 +447,7 @@ class TestBuildSuiteVariables:
     def test_metrics_and_plot_type_variables(self, _tracking_ecflow, full_pipeline_dag, _make_config):
         """Statistics node has METRICS; plot node has PLOT_TYPE."""
         import json
+
         from mdt.ecflow_engine import EcFlowEngine
 
         engine = EcFlowEngine(full_pipeline_dag, _make_config())
@@ -693,12 +692,8 @@ class TestGenerateTaskWrappersScriptContent:
 class TestExecuteFlow:
     """Requirement 6.1–6.4 — execute() orchestration and server interaction."""
 
-    def test_execute_calls_build_generate_load_in_order(
-        self, _fake_ecflow, simple_dag, _make_config, tmp_path
-    ):
+    def test_execute_calls_build_generate_load_in_order(self, _fake_ecflow, simple_dag, _make_config, tmp_path):
         """execute() calls build_suite, generate_task_wrappers, _load_and_start in sequence."""
-        from unittest.mock import call, patch
-
         from mdt.ecflow_engine import EcFlowEngine
 
         cfg = _make_config({"task_script_dir": str(tmp_path / "scripts")})
@@ -708,7 +703,6 @@ class TestExecuteFlow:
 
         orig_build = engine.build_suite
         orig_gen = engine.generate_task_wrappers
-        orig_load = engine._load_and_start
 
         def tracked_build():
             call_order.append("build_suite")
@@ -731,16 +725,16 @@ class TestExecuteFlow:
 
         assert call_order == ["build_suite", "generate_task_wrappers", "_load_and_start"]
 
-    def test_load_and_start_uses_configured_host_port(
-        self, _fake_ecflow, simple_dag, _make_config
-    ):
+    def test_load_and_start_uses_configured_host_port(self, _fake_ecflow, simple_dag, _make_config):
         """_load_and_start connects to the ecFlow server with custom host and port."""
         from mdt.ecflow_engine import EcFlowEngine
 
-        cfg = _make_config({
-            "ecflow_host": "ecflow.hpc.local",
-            "ecflow_port": "4500",
-        })
+        cfg = _make_config(
+            {
+                "ecflow_host": "ecflow.hpc.local",
+                "ecflow_port": "4500",
+            }
+        )
         engine = EcFlowEngine(simple_dag, cfg)
 
         mock_client = MagicMock(name="Client-instance")
@@ -751,9 +745,7 @@ class TestExecuteFlow:
 
         engine.ecflow.Client.assert_called_once_with("ecflow.hpc.local", 4500)
 
-    def test_load_and_start_loads_defs_then_begins_suite(
-        self, _fake_ecflow, simple_dag, _make_config
-    ):
+    def test_load_and_start_loads_defs_then_begins_suite(self, _fake_ecflow, simple_dag, _make_config):
         """_load_and_start calls client.load(defs) then client.begin_suite(suite_name)."""
         from mdt.ecflow_engine import EcFlowEngine
 
@@ -781,48 +773,42 @@ class TestExecuteFlow:
         assert begin_call_idx is not None
         assert load_call_idx < begin_call_idx
 
-    def test_connection_failure_raises_runtime_error_with_host_port(
-        self, _fake_ecflow, simple_dag, _make_config
-    ):
+    def test_connection_failure_raises_runtime_error_with_host_port(self, _fake_ecflow, simple_dag, _make_config):
         """Connection failure raises RuntimeError mentioning the host and port."""
         from mdt.ecflow_engine import EcFlowEngine
 
-        cfg = _make_config({
-            "ecflow_host": "bad-host.example.com",
-            "ecflow_port": "9999",
-        })
+        cfg = _make_config(
+            {
+                "ecflow_host": "bad-host.example.com",
+                "ecflow_port": "9999",
+            }
+        )
         engine = EcFlowEngine(simple_dag, cfg)
 
         # Make Client constructor raise a connection error
-        engine.ecflow.Client = MagicMock(
-            side_effect=ConnectionRefusedError("Connection refused")
-        )
+        engine.ecflow.Client = MagicMock(side_effect=ConnectionRefusedError("Connection refused"))
 
         with pytest.raises(RuntimeError, match="bad-host.example.com"):
             engine._load_and_start(MagicMock())
 
-    def test_connection_failure_includes_port_in_message(
-        self, _fake_ecflow, simple_dag, _make_config
-    ):
+    def test_connection_failure_includes_port_in_message(self, _fake_ecflow, simple_dag, _make_config):
         """RuntimeError message includes the port number."""
         from mdt.ecflow_engine import EcFlowEngine
 
-        cfg = _make_config({
-            "ecflow_host": "myhost",
-            "ecflow_port": "7777",
-        })
+        cfg = _make_config(
+            {
+                "ecflow_host": "myhost",
+                "ecflow_port": "7777",
+            }
+        )
         engine = EcFlowEngine(simple_dag, cfg)
 
-        engine.ecflow.Client = MagicMock(
-            side_effect=OSError("Cannot connect")
-        )
+        engine.ecflow.Client = MagicMock(side_effect=OSError("Cannot connect"))
 
         with pytest.raises(RuntimeError, match="7777"):
             engine._load_and_start(MagicMock())
 
-    def test_connection_failure_wraps_original_exception(
-        self, _fake_ecflow, simple_dag, _make_config
-    ):
+    def test_connection_failure_wraps_original_exception(self, _fake_ecflow, simple_dag, _make_config):
         """RuntimeError chains the original exception as __cause__."""
         from mdt.ecflow_engine import EcFlowEngine
 
@@ -836,16 +822,16 @@ class TestExecuteFlow:
 
         assert exc_info.value.__cause__ is original
 
-    def test_execute_returns_suite_name_and_status(
-        self, _fake_ecflow, simple_dag, _make_config, tmp_path
-    ):
+    def test_execute_returns_suite_name_and_status(self, _fake_ecflow, simple_dag, _make_config, tmp_path):
         """execute() returns dict with suite name and 'started' status."""
         from mdt.ecflow_engine import EcFlowEngine
 
-        cfg = _make_config({
-            "task_script_dir": str(tmp_path / "scripts"),
-            "suite_name": "my_workflow",
-        })
+        cfg = _make_config(
+            {
+                "task_script_dir": str(tmp_path / "scripts"),
+                "suite_name": "my_workflow",
+            }
+        )
         engine = EcFlowEngine(simple_dag, cfg)
 
         mock_client = MagicMock(name="Client-instance")
@@ -855,9 +841,7 @@ class TestExecuteFlow:
 
         assert result == {"suite": "my_workflow", "status": "started"}
 
-    def test_load_failure_raises_runtime_error(
-        self, _fake_ecflow, simple_dag, _make_config
-    ):
+    def test_load_failure_raises_runtime_error(self, _fake_ecflow, simple_dag, _make_config):
         """If client.load() fails, RuntimeError is raised with host/port."""
         from mdt.ecflow_engine import EcFlowEngine
 
