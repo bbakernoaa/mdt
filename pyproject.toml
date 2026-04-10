@@ -10,7 +10,7 @@ authors = [
     {name = "NOAA NWS MDC", email = "example@noaa.gov"},
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "pyyaml",
     "networkx",
