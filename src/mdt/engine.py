@@ -2,8 +2,6 @@
 
 import logging
 
-import dask
-import dask.distributed
 import networkx as nx
 
 from mdt.engine_registry import Engine
@@ -33,6 +31,8 @@ class PrefectEngine(Engine):
         which connect their workers back to this primary scheduler.
         Each HPC cluster's workers are tagged with the cluster name using `resources`.
         """
+        import dask.distributed
+
         exec_cfg = self.config.execution
         clusters_cfg = exec_cfg.get("clusters", {})
 
@@ -129,6 +129,7 @@ class PrefectEngine(Engine):
             A dictionary mapping node IDs from the task graph to the Dask futures
             representing their completion state and results.
         """
+        import dask
         from prefect import flow, get_run_logger, task
         from prefect_dask.task_runners import DaskTaskRunner
 
