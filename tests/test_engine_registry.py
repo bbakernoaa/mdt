@@ -16,6 +16,7 @@ class DummyEngine(Engine):
         self.config = config
 
     def execute(self) -> dict:
+        """Mock execution method."""
         return {"status": "ok"}
 
 

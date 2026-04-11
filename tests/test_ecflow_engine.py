@@ -138,6 +138,7 @@ class TestEcFlowEngineStubs:
     """Verify stub methods raise NotImplementedError."""
 
     def test_build_suite_returns_defs(self, _fake_ecflow, simple_dag, _make_config):
+        """Verify build_suite creates and returns a Defs object."""
         from mdt.ecflow_engine import EcFlowEngine
 
         engine = EcFlowEngine(simple_dag, _make_config())
@@ -148,6 +149,7 @@ class TestEcFlowEngineStubs:
         defs.add_suite.assert_called_once()
 
     def test_generate_task_wrappers_returns_paths(self, _fake_ecflow, simple_dag, _make_config, tmp_path):
+        """Verify task wrappers are generated and their paths returned."""
         from mdt.ecflow_engine import EcFlowEngine
 
         cfg = _make_config({"task_script_dir": str(tmp_path / "ecf_scripts")})
@@ -703,7 +705,6 @@ class TestExecuteFlow:
 
         orig_build = engine.build_suite
         orig_gen = engine.generate_task_wrappers
-        orig_load = engine._load_and_start
 
         def tracked_build():
             call_order.append("build_suite")
