@@ -84,9 +84,7 @@ class EngineRegistry:
         """
         if name not in cls._engines:
             available = ", ".join(sorted(cls._engines)) or "(none)"
-            raise ValueError(
-                f"Unsupported orchestrator '{name}'. Available: {available}"
-            )
+            raise ValueError(f"Unsupported orchestrator '{name}'. Available: {available}")
         return cls._engines[name]()
 
 
@@ -94,9 +92,7 @@ def _register_prefect():
     try:
         from mdt.engine import PrefectEngine
     except ImportError:
-        raise ImportError(
-            "Prefect is not installed. Install with: pip install mdt[prefect]"
-        )
+        raise ImportError("Prefect is not installed. Install with: pip install mdt[prefect]")
     return PrefectEngine
 
 
@@ -107,9 +103,7 @@ def _register_ecflow():
     try:
         from mdt.ecflow_engine import EcFlowEngine
     except ImportError:
-        raise ImportError(
-            "ecFlow is not installed. Install with: pip install mdt[ecflow]"
-        )
+        raise ImportError("ecFlow is not installed. Install with: pip install mdt[ecflow]")
     return EcFlowEngine
 
 

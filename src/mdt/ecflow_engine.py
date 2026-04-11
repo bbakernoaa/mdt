@@ -27,10 +27,7 @@ _FAMILY_MAP: dict[str, str] = {
 #: Template for the dispatch block inside each wrapper script.
 #: Maps ``TASK_TYPE`` values to the import + call statements.
 _DISPATCH_BLOCKS: dict[str, str] = {
-    "load_data": (
-        "    from mdt.tasks.data import load_data\n"
-        "    load_data(name=task_name, dataset_type=dataset_type, kwargs=kwargs)"
-    ),
+    "load_data": ("    from mdt.tasks.data import load_data\n    load_data(name=task_name, dataset_type=dataset_type, kwargs=kwargs)"),
     "pair_data": (
         "    from mdt.tasks.pairing import pair_data\n"
         "    pair_data(name=task_name, method=kwargs.pop('method', ''),\n"
@@ -125,9 +122,7 @@ class EcFlowEngine(Engine):
         try:
             import ecflow  # lazy import — keep ecflow optional
         except ImportError:
-            raise ImportError(
-                "ecFlow is not installed. Install with: pip install mdt[ecflow]"
-            )
+            raise ImportError("ecFlow is not installed. Install with: pip install mdt[ecflow]")
 
         self.dag = dag
         self.config = config
@@ -214,10 +209,7 @@ class EcFlowEngine(Engine):
             if not predecessors:
                 continue
 
-            parts = [
-                f"{node_family[pred]}/{pred} == complete"
-                for pred in sorted(predecessors)
-            ]
+            parts = [f"{node_family[pred]}/{pred} == complete" for pred in sorted(predecessors)]
             trigger_expr = " and ".join(parts)
             node_tasks[node_id].add_trigger(trigger_expr)
 
@@ -270,7 +262,4 @@ class EcFlowEngine(Engine):
             client.load(defs)
             client.begin_suite(self.suite_name)
         except Exception as exc:
-            raise RuntimeError(
-                f"Failed to connect to ecFlow server at "
-                f"{self.host}:{self.port} — {exc}"
-            ) from exc
+            raise RuntimeError(f"Failed to connect to ecFlow server at {self.host}:{self.port} — {exc}") from exc

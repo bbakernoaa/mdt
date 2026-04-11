@@ -105,8 +105,17 @@ def _find_metric(module: Any, metric_name: str) -> Any:
     if hasattr(module, metric_name):
         return getattr(module, metric_name)
 
+    # Alias handling for common metrics
+    aliases = {
+        "BIAS": "MB",
+        "MBIAS": "MB",
+    }
+    canonical_name = aliases.get(metric_name.upper(), metric_name)
+    if hasattr(module, canonical_name):
+        return getattr(module, canonical_name)
+
     for attr in dir(module):
-        if attr.lower() == metric_name.lower():
+        if attr.lower() == metric_name.lower() or attr.lower() == canonical_name.lower():
             return getattr(module, attr)
 
     if hasattr(module, "stats"):
@@ -212,10 +221,20 @@ def _execute_metric(
             if lon_d and "lon_dim" not in w_kwargs:
                 w_kwargs["lon_dim"] = lon_d
 
-            if metric_name == "RMSE" and target_obs is not None:
+            # Unified case-insensitive name check
+            m_name_upper = metric_name.upper()
+
+            if m_name_upper == "RMSE" and target_obs is not None:
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
-                return np.sqrt(mse)
-            elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
+                result = np.sqrt(mse)
+                return update_history(result, f"Computed weighted {m_name_upper} fallback.")
+            elif m_name_upper in ["MB", "BIAS", "MBIAS"] and target_obs is not None:
+                result = monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
+                return update_history(result, f"Computed weighted {m_name_upper} fallback.")
+            elif m_name_upper == "MAE" and target_obs is not None:
+                result = monet_stats.weighted_spatial_mean(abs(target_mod - target_obs), weights=w, **w_kwargs)
+                return update_history(result, f"Computed weighted {m_name_upper} fallback.")
+            elif m_name_upper in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
                 mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
                 mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
 
@@ -226,7 +245,8 @@ def _execute_metric(
                 var_mod = monet_stats.weighted_spatial_mean(dev_mod**2, weights=w, **w_kwargs)
                 var_obs = monet_stats.weighted_spatial_mean(dev_obs**2, weights=w, **w_kwargs)
 
-                return cov / np.sqrt(var_mod * var_obs)
+                result = cov / np.sqrt(var_mod * var_obs)
+                return update_history(result, f"Computed weighted {m_name_upper} fallback.")
 
             logger.warning(
                 "Metric '%s' does not support weights natively and no manual fallback is implemented. Using unweighted.",
