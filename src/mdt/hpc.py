@@ -2,8 +2,6 @@
 
 import logging
 
-from dask_jobqueue import LSFCluster, PBSCluster, SLURMCluster
-
 logger = logging.getLogger(__name__)
 
 
@@ -58,16 +56,24 @@ class HPCProfileFactory:
 
         # Dispatch to generic schedulers
         elif mode == "slurm":
+            from dask_jobqueue import SLURMCluster
+
             return SLURMCluster(**user_kwargs)
         elif mode == "pbs":
+            from dask_jobqueue import PBSCluster
+
             return PBSCluster(**user_kwargs)
         elif mode == "lsf":
+            from dask_jobqueue import LSFCluster
+
             return LSFCluster(**user_kwargs)
         else:
             raise ValueError(f"Unknown execution mode or HPC profile: '{mode}'")
 
     @classmethod
     def _create_hera(cls, user_kwargs):
+        from dask_jobqueue import SLURMCluster
+
         logger.info("Initializing SLURM cluster with RDHPCS Hera defaults.")
         defaults = {
             "cores": 40,
@@ -91,6 +97,8 @@ class HPCProfileFactory:
 
     @classmethod
     def _create_jet(cls, user_kwargs):
+        from dask_jobqueue import SLURMCluster
+
         logger.info("Initializing SLURM cluster with RDHPCS Jet defaults.")
         defaults = {
             "cores": 24,  # Jet typically has variations, setting a safe default
@@ -111,6 +119,8 @@ class HPCProfileFactory:
 
     @classmethod
     def _create_orion(cls, user_kwargs):
+        from dask_jobqueue import SLURMCluster
+
         logger.info("Initializing SLURM cluster with RDHPCS Orion defaults.")
         defaults = {
             "cores": 40,
@@ -131,6 +141,8 @@ class HPCProfileFactory:
 
     @classmethod
     def _create_hercules(cls, user_kwargs):
+        from dask_jobqueue import SLURMCluster
+
         logger.info("Initializing SLURM cluster with RDHPCS Hercules defaults.")
         defaults = {
             "cores": 80,
@@ -154,6 +166,8 @@ class HPCProfileFactory:
 
     @classmethod
     def _create_gaea(cls, user_kwargs):
+        from dask_jobqueue import SLURMCluster
+
         logger.info("Initializing SLURM cluster with RDHPCS Gaea defaults.")
         defaults = {
             "cores": 36,
@@ -174,6 +188,8 @@ class HPCProfileFactory:
 
     @classmethod
     def _create_ursa(cls, user_kwargs):
+        from dask_jobqueue import SLURMCluster
+
         logger.info("Initializing SLURM cluster with RDHPCS Ursa defaults.")
         defaults = {
             "cores": 36,  # Adjust cores/memory as appropriate for Ursa hardware
@@ -194,6 +210,8 @@ class HPCProfileFactory:
 
     @classmethod
     def _create_wcoss2(cls, user_kwargs):
+        from dask_jobqueue import PBSCluster
+
         # WCOSS2 typically uses PBS Pro
         logger.info("Initializing PBS cluster with WCOSS2 defaults.")
         defaults = {
