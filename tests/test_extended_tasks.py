@@ -1,9 +1,10 @@
 import numpy as np
 import pandas as pd
 import xarray as xr
-import pytest
-from mdt.tasks.statistics import compute_statistics
+
 from mdt.tasks.plotting import generate_plot
+from mdt.tasks.statistics import compute_statistics
+
 
 def test_compute_statistics_no_manual_fallbacks(mocker):
     """Test that manual weighted fallbacks are NOT used anymore."""
@@ -13,15 +14,20 @@ def test_compute_statistics_no_manual_fallbacks(mocker):
     mock_wsm = mocker.patch("monet_stats.weighted_spatial_mean")
 
     # Mock MB to NOT have 'weights' in its signature
-    def mock_mb_no_weights(obs, mod, axis=None): return xr.DataArray(0.5)
+    def mock_mb_no_weights(obs, mod, axis=None):
+        return xr.DataArray(0.5)
+
     mocker.patch.object(monet_stats, "MB", mock_mb_no_weights, create=True)
     mock_mb_no_weights.__name__ = "MB"
 
-    ds = xr.Dataset({
-        "obs": (("lat", "lon"), np.random.rand(10, 10)),
-        "mod": (("lat", "lon"), np.random.rand(10, 10)),
-        "w": (("lat", "lon"), np.random.rand(10, 10))
-    }, coords={"lat": np.arange(10), "lon": np.arange(10)})
+    ds = xr.Dataset(
+        {
+            "obs": (("lat", "lon"), np.random.rand(10, 10)),
+            "mod": (("lat", "lon"), np.random.rand(10, 10)),
+            "w": (("lat", "lon"), np.random.rand(10, 10)),
+        },
+        coords={"lat": np.arange(10), "lon": np.arange(10)},
+    )
 
     kwargs = {"obs_var": "obs", "mod_var": "mod", "weights": "w"}
 
@@ -29,6 +35,7 @@ def test_compute_statistics_no_manual_fallbacks(mocker):
     res = compute_statistics("test_mb", ["MB"], ds, kwargs)
     assert float(res["MB"]) == 0.5
     assert not mock_wsm.called
+
 
 def test_generate_plot_dynamic_discovery(mocker):
     """Test generate_plot for dynamic discovery of monet-plots classes."""

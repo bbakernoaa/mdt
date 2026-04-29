@@ -2,7 +2,6 @@ import inspect
 import logging
 from typing import Any, Dict, List, Union
 
-import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -147,8 +146,6 @@ def _execute_metric(
     -----
     Aero Protocol: Preserves Dask laziness and ensures backend-agnostic behavior.
     """
-    import monet_stats
-
     obs_var = kwargs.get("obs_var", "obs")
     mod_var = kwargs.get("mod_var", "mod")
     weights = kwargs.get("weights")

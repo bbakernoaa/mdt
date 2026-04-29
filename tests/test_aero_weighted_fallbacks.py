@@ -1,4 +1,3 @@
-import dask.array as da
 import numpy as np
 import xarray as xr
 
@@ -57,7 +56,6 @@ def test_execute_metric_no_manual_fallback_rmse(mocker):
     mock_rmse_no_weights.__name__ = "RMSE"
 
     # We need to mock monet_stats.weighted_spatial_mean to ensure it's NOT called
-    import monet_stats
 
     mock_wsm = mocker.patch("monet_stats.weighted_spatial_mean")
 
