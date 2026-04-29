@@ -66,14 +66,9 @@ class TestLazyImportBehavior:
 
         # Collect top-level import lines (not indented)
         top_level_imports = [
-            line.strip()
-            for line in lines
-            if (line.startswith("import ") or line.startswith("from "))
-            and "prefect" in line.lower()
+            line.strip() for line in lines if (line.startswith("import ") or line.startswith("from ")) and "prefect" in line.lower()
         ]
-        assert top_level_imports == [], (
-            f"Found top-level prefect imports in mdt.engine: {top_level_imports}"
-        )
+        assert top_level_imports == [], f"Found top-level prefect imports in mdt.engine: {top_level_imports}"
 
 
 class TestPrefectMissingError:
@@ -88,11 +83,10 @@ class TestPrefectMissingError:
         descriptive error instructing the user to install the 'prefect'
         extras group.
         """
+
         # Replace the prefect factory with one that simulates missing prefect
         def _factory_prefect_missing():
-            raise ImportError(
-                "Prefect is not installed. Install with: pip install mdt[prefect]"
-            )
+            raise ImportError("Prefect is not installed. Install with: pip install mdt[prefect]")
 
         EngineRegistry._engines["prefect"] = _factory_prefect_missing
 
@@ -120,10 +114,9 @@ class TestPrefectMissingError:
         Requirement 3.3: descriptive error instructing the user to install
         the 'prefect' extras group.
         """
+
         def _factory_prefect_missing():
-            raise ImportError(
-                "Prefect is not installed. Install with: pip install mdt[prefect]"
-            )
+            raise ImportError("Prefect is not installed. Install with: pip install mdt[prefect]")
 
         EngineRegistry._engines["prefect"] = _factory_prefect_missing
 

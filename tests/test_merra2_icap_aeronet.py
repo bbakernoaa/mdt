@@ -125,17 +125,14 @@ def test_merra2_icap_aeronet_full_workflow(sample_data_files, mocker):
     metrics = ["rmse", "mb"]
     stats_kwargs = {"obs_var": "aod_550nm", "mod_var": "AOD"}
 
-    # Mock monet_stats metrics to avoid potential issues if it also needs esmpy (unlikely but safe)
-    import monet_stats
-
-    mocker.patch.object(monet_stats, "RMSE", return_value=xr.DataArray(0.1, attrs={"history": ""}))
-    mocker.patch.object(monet_stats, "MB", return_value=xr.DataArray(0.05, attrs={"history": ""}))
-
+    # Use real monet-stats functions to ensure end-to-end integration works
     results = compute_statistics("workflow_stats", metrics, combined, stats_kwargs)
 
     # MDT tasks often lowercase metric names
     assert "rmse" in results
     assert "mb" in results
+    assert isinstance(results["rmse"], xr.DataArray)
+    assert "Computed rmse" in results["rmse"].attrs["history"]
 
 
 def test_merra2_vs_icap_bias_workflow(sample_data_files, mocker):
@@ -173,14 +170,18 @@ def test_merra2_vs_icap_bias_workflow(sample_data_files, mocker):
     assert "modeaod550" in pair_m2_icap.data_vars
 
     # 3. Statistics (Bias)
-    import monet_stats
-
-    mocker.patch.object(monet_stats, "MB", return_value=xr.DataArray(np.random.rand(10, 10), dims=("lat", "lon"), attrs={"history": ""}))
-
+    # Use real MB from monet-stats
+    # We explicitly pass dim='time' to reduce over time, leaving spatial dims
+    # Or discovery might find lat/lon and reduce over them if we don't specify.
+    # In _execute_metric, if dim is None, it tries to discover spatial dims and reduces over them.
+    # pair_m2_icap has (time, lat, lon). discover_spatial_dims will find (lat, lon).
+    # So MB will be calculated over (lat, lon), leaving 'time'.
     results = compute_statistics("bias_stats", ["mb"], pair_m2_icap, {"obs_var": "modeaod550", "mod_var": "TOTEXTTAU"})
 
     assert "mb" in results
-    assert "lat" in results["mb"].dims
+    # results["mb"] should have 'time' dim if it reduced over lat/lon
+    assert "time" in results["mb"].dims
+    assert "Computed mb" in results["mb"].attrs["history"]
 
 
 def test_merra2_lazy_loading_real_reader(sample_data_files, mocker):
