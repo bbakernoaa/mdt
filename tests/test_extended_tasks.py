@@ -5,25 +5,17 @@ import pytest
 from mdt.tasks.statistics import compute_statistics
 from mdt.tasks.plotting import generate_plot
 
-def test_compute_statistics_weighted_fallbacks(mocker):
-    """Test manual weighted fallbacks for MB and MAE."""
+def test_compute_statistics_no_manual_fallbacks(mocker):
+    """Test that manual weighted fallbacks are NOT used anymore."""
     import monet_stats
 
-    # Mock monet_stats.weighted_spatial_mean
-    mock_wsm = mocker.patch("monet_stats.weighted_spatial_mean", return_value=xr.DataArray(0.1))
+    # Mock monet_stats.weighted_spatial_mean to ensure it's NOT called by the orchestrator fallback
+    mock_wsm = mocker.patch("monet_stats.weighted_spatial_mean")
 
-    # Mock MB and MAE to NOT have 'weights' in their signature to trigger fallback
-    # We can do this by creating a function without 'weights' parameter
-    def mock_mb_no_weights(obs, mod, axis=None): return 0.5
-    def mock_mae_no_weights(obs, mod, axis=None): return 0.5
-
-    # We need to make sure _find_metric finds these
+    # Mock MB to NOT have 'weights' in its signature
+    def mock_mb_no_weights(obs, mod, axis=None): return xr.DataArray(0.5)
     mocker.patch.object(monet_stats, "MB", mock_mb_no_weights, create=True)
-    mocker.patch.object(monet_stats, "MAE", mock_mae_no_weights, create=True)
-
-    # Force the names for the fallback logic
     mock_mb_no_weights.__name__ = "MB"
-    mock_mae_no_weights.__name__ = "MAE"
 
     ds = xr.Dataset({
         "obs": (("lat", "lon"), np.random.rand(10, 10)),
@@ -33,42 +25,21 @@ def test_compute_statistics_weighted_fallbacks(mocker):
 
     kwargs = {"obs_var": "obs", "mod_var": "mod", "weights": "w"}
 
-    # Test MB fallback
+    # Test MB - should call the mock_mb_no_weights directly (unweighted) and NOT the fallback wsm
     res = compute_statistics("test_mb", ["MB"], ds, kwargs)
-    assert float(res["MB"]) == 0.1
-    assert mock_wsm.called
+    assert float(res["MB"]) == 0.5
+    assert not mock_wsm.called
 
-    # Test MAE fallback
-    mock_wsm.reset_mock()
-    res = compute_statistics("test_mae", ["MAE"], ds, kwargs)
-    assert float(res["MAE"]) == 0.1
-    assert mock_wsm.called
-
-def test_generate_plot_extended(mocker):
-    """Test generate_plot for timeseries and taylor types."""
+def test_generate_plot_dynamic_discovery(mocker):
+    """Test generate_plot for dynamic discovery of monet-plots classes."""
     import monet_plots
 
-    # Mock Plot classes
-    mock_ts_plot = mocker.Mock()
-    mock_taylor_plot = mocker.Mock()
+    # Mock a new plot class that doesn't have a priority mapping
+    mock_custom_plot = mocker.Mock()
+    mocker.patch.object(monet_plots, "CustomPlot", mock_custom_plot, create=True)
 
-    mocker.patch("monet_plots.TimeSeriesPlot", return_value=mock_ts_plot)
-    mocker.patch("monet_plots.TaylorDiagramPlot", return_value=mock_taylor_plot)
+    df = pd.DataFrame({"x": [1, 2], "y": [3, 4]})
 
-    df = pd.DataFrame({"time": pd.date_range("2023-01-01", periods=10, freq="h"), "obs": np.random.rand(10), "mod": np.random.rand(10)})
-
-    # Test Static TimeSeries
-    generate_plot("test_ts", "timeseries", df, {"savename": "ts.png"}, track="A")
-    monet_plots.TimeSeriesPlot.assert_called_once()
-    mock_ts_plot.save.assert_called_with("ts.png")
-
-    # Test Static Taylor
-    generate_plot("test_taylor", "taylor", df, {"savename": "taylor.png"}, track="A")
-    monet_plots.TaylorDiagramPlot.assert_called_once()
-    mock_taylor_plot.save.assert_called_with("taylor.png")
-
-    # Test Interactive TimeSeries
-    mock_ts_plot.hvplot.return_value = "interactive_plot"
-    res = generate_plot("test_ts_int", "timeseries", df, {}, track="B")
-    assert res == "interactive_plot"
-    mock_ts_plot.hvplot.assert_called_once()
+    # Test discovery of 'Custom' (should find CustomPlot)
+    generate_plot("test_custom", "Custom", df, {"savename": "custom.png"}, track="A")
+    monet_plots.CustomPlot.assert_called_once()

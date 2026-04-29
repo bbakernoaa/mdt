@@ -201,39 +201,12 @@ def _execute_metric(
                     return func(target_obs, target_mod, weights=w, **call_kwargs)
                 return func(target_mod, weights=w, **call_kwargs)
 
-            # Orchestrator Fallback for metrics without native weights support
-            metric_name = getattr(func, "__name__", "").upper()
-            w_kwargs = {k: v for k, v in call_kwargs.items() if k in ["lat_dim", "lon_dim"]}
-
-            # Map axis to lat_dim/lon_dim for weighted_spatial_mean fallback
-            lat_d, lon_d = discover_spatial_dims(data, dims=axis if isinstance(axis, list) else None)
-            if lat_d and "lat_dim" not in w_kwargs:
-                w_kwargs["lat_dim"] = lat_d
-            if lon_d and "lon_dim" not in w_kwargs:
-                w_kwargs["lon_dim"] = lon_d
-
-            if metric_name == "RMSE" and target_obs is not None:
-                mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
-                return np.sqrt(mse)
-            elif metric_name in ["MB", "BIAS", "MBIAS"] and target_obs is not None:
-                return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
-            elif metric_name == "MAE" and target_obs is not None:
-                return monet_stats.weighted_spatial_mean(abs(target_mod - target_obs), weights=w, **w_kwargs)
-            elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
-                mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
-                mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)
-
-                dev_mod = target_mod - mu_mod
-                dev_obs = target_obs - mu_obs
-
-                cov = monet_stats.weighted_spatial_mean(dev_mod * dev_obs, weights=w, **w_kwargs)
-                var_mod = monet_stats.weighted_spatial_mean(dev_mod**2, weights=w, **w_kwargs)
-                var_obs = monet_stats.weighted_spatial_mean(dev_obs**2, weights=w, **w_kwargs)
-
-                return cov / np.sqrt(var_mod * var_obs)
-
+            # MDT Architecture Rule: Rely solely on monet-stats for statistical computations.
+            # Manual fallbacks have been removed to ensure scientific consistency
+            # and to minimize maintenance overhead.
+            metric_name = getattr(func, "__name__", "")
             logger.warning(
-                "Metric '%s' does not support weights natively and no manual fallback is implemented. Using unweighted.",
+                "Metric '%s' does not support weights natively. Using unweighted.",
                 metric_name,
             )
 
