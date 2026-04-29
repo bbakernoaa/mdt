@@ -66,33 +66,26 @@ class TestLazyImportBehavior:
 
         # Collect top-level import lines (not indented)
         top_level_imports = [
-            line.strip()
-            for line in lines
-            if (line.startswith("import ") or line.startswith("from "))
-            and "prefect" in line.lower()
+            line.strip() for line in lines if (line.startswith("import ") or line.startswith("from ")) and "prefect" in line.lower()
         ]
-        assert top_level_imports == [], (
-            f"Found top-level prefect imports in mdt.engine: {top_level_imports}"
-        )
+        assert top_level_imports == [], f"Found top-level prefect imports in mdt.engine: {top_level_imports}"
 
 
 class TestPrefectMissingError:
     """Verify helpful ImportError when Prefect is missing and engine is requested."""
 
     def test_get_engine_prefect_raises_importerror_when_missing(self):
-        """EngineRegistry.get_engine('prefect') should raise ImportError with
-        install instructions when Prefect is not installed.
+        """EngineRegistry.get_engine('prefect') should raise ImportError.
 
         Requirement 3.3: WHEN Prefect is not installed and the user selects
         the 'prefect' orchestrator, THE Engine_Registry SHALL raise a
         descriptive error instructing the user to install the 'prefect'
         extras group.
         """
+
         # Replace the prefect factory with one that simulates missing prefect
         def _factory_prefect_missing():
-            raise ImportError(
-                "Prefect is not installed. Install with: pip install mdt[prefect]"
-            )
+            raise ImportError("Prefect is not installed. Install with: pip install mdt[prefect]")
 
         EngineRegistry._engines["prefect"] = _factory_prefect_missing
 
@@ -100,9 +93,7 @@ class TestPrefectMissingError:
             EngineRegistry.get_engine("prefect")
 
     def test_register_prefect_factory_raises_when_import_fails(self):
-        """The real _register_prefect factory should raise ImportError with
-        helpful message when mdt.engine cannot import PrefectEngine due to
-        missing prefect dependency.
+        """The real _register_prefect factory should raise ImportError.
 
         Requirement 3.3: descriptive error instructing the user to install
         the 'prefect' extras group.
@@ -120,10 +111,9 @@ class TestPrefectMissingError:
         Requirement 3.3: descriptive error instructing the user to install
         the 'prefect' extras group.
         """
+
         def _factory_prefect_missing():
-            raise ImportError(
-                "Prefect is not installed. Install with: pip install mdt[prefect]"
-            )
+            raise ImportError("Prefect is not installed. Install with: pip install mdt[prefect]")
 
         EngineRegistry._engines["prefect"] = _factory_prefect_missing
 

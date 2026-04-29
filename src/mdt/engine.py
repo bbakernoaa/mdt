@@ -2,8 +2,6 @@
 
 import logging
 
-import dask
-import dask.distributed
 import networkx as nx
 
 from mdt.engine_registry import Engine
@@ -39,6 +37,8 @@ class PrefectEngine(Engine):
         import subprocess
 
         # If there's only one cluster and it's local, keep it simple
+        import dask.distributed
+
         if len(clusters_cfg) == 1 and list(clusters_cfg.values())[0].get("mode", "local") == "local":
             logger.info("Setting up a single local Dask cluster.")
             cluster_name = list(clusters_cfg.keys())[0]
@@ -164,6 +164,8 @@ class PrefectEngine(Engine):
             logger = get_run_logger()
             logger.info(f"Generating plot: {name} of type {plot_type}")
             return generate_plot(name, plot_type, input_data, kwargs)
+
+        import dask
 
         # Define the Prefect flow inline to capture the instance variables
         @flow(name="MDT Verification Workflow")

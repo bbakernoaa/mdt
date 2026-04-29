@@ -46,7 +46,9 @@ def test_pair_data_double_check(mocker):
     res_lazy = pair_data("test_lazy", "interpolate", ds_lazy, ds_lazy, {})
 
     # Check that the lazy run is still lazy
-    assert hasattr(res_lazy.val.data, "dask") or type(res_lazy.val.data).__module__.startswith("cubed")
+    import dask.array as darray
+
+    assert isinstance(res_lazy.val.data, darray.Array) or type(res_lazy.val.data).__module__.startswith("cubed")
 
     # Double-Check: Results must be identical after compute
     xr.testing.assert_allclose(res_eager, res_lazy.compute())
@@ -100,7 +102,9 @@ def test_compute_statistics_double_check(mocker):
 
     # Ensure result is still lazy if input was lazy and result is an xarray object
     if hasattr(results_lazy["RMSE"], "data"):
-        assert hasattr(results_lazy["RMSE"].data, "dask") or type(results_lazy["RMSE"].data).__module__.startswith("cubed")
+        import dask.array as darray
+
+        assert isinstance(results_lazy["RMSE"].data, darray.Array) or type(results_lazy["RMSE"].data).__module__.startswith("cubed")
 
     # Double-Check: Results must be identical
     assert float(results_lazy["RMSE"].compute()) == float(results_eager["RMSE"])

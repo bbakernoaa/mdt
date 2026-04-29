@@ -3,7 +3,6 @@
 import textwrap
 
 import pytest
-import yaml
 
 from mdt.config import ConfigParser
 
@@ -69,6 +68,7 @@ class TestEcFlowKeysAccessible:
     """Verify ecFlow-specific keys are accessible from the execution property."""
 
     def test_ecflow_keys_present_in_execution(self, _write_yaml):
+        """Verify ecFlow-specific keys are present in the execution property."""
         path = _write_yaml("""\
             data:
               merra2: {}
@@ -137,6 +137,7 @@ class TestEcFlowKeysAccessible:
         assert "compute" in ex["clusters"]
 
     def test_orchestrator_key_accessible_from_execution(self, _write_yaml):
+        """Verify the orchestrator key is accessible from the execution property."""
         path = _write_yaml("""\
             data:
               merra2: {}
