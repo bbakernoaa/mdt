@@ -13,9 +13,9 @@ import os
 
 import networkx as nx
 
-logger = logging.getLogger(__name__)
-
 from mdt.engine_registry import Engine
+
+logger = logging.getLogger(__name__)
 
 #: Maps DAG ``task_type`` values to ecFlow family names.
 _FAMILY_MAP: dict[str, str] = {
