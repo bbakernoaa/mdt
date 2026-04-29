@@ -215,6 +215,10 @@ def _execute_metric(
             if metric_name == "RMSE" and target_obs is not None:
                 mse = monet_stats.weighted_spatial_mean((target_mod - target_obs) ** 2, weights=w, **w_kwargs)
                 return np.sqrt(mse)
+            elif metric_name in ["MB", "BIAS", "MBIAS"] and target_obs is not None:
+                return monet_stats.weighted_spatial_mean(target_mod - target_obs, weights=w, **w_kwargs)
+            elif metric_name == "MAE" and target_obs is not None:
+                return monet_stats.weighted_spatial_mean(abs(target_mod - target_obs), weights=w, **w_kwargs)
             elif metric_name in ["CORR", "PEARSONR", "CORRELATION"] and target_obs is not None:
                 mu_mod = monet_stats.weighted_spatial_mean(target_mod, weights=w, **w_kwargs)
                 mu_obs = monet_stats.weighted_spatial_mean(target_obs, weights=w, **w_kwargs)

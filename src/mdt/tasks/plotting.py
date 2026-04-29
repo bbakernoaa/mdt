@@ -73,6 +73,20 @@ def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
         plot_obj.save(savename)
         plot_obj.close()
         return plot_obj
+    elif "timeseries" in plot_type.lower():
+        # TimeSeriesPlot usually expects a DataFrame
+        data = input_data.to_dataframe() if hasattr(input_data, "to_dataframe") else input_data
+        plot_obj = monet_plots.TimeSeriesPlot(data, **kwargs)
+        plot_obj.save(savename)
+        plot_obj.close()
+        return plot_obj
+    elif "taylor" in plot_type.lower():
+        # TaylorDiagramPlot usually expects a DataFrame
+        data = input_data.to_dataframe() if hasattr(input_data, "to_dataframe") else input_data
+        plot_obj = monet_plots.TaylorDiagramPlot(data, **kwargs)
+        plot_obj.save(savename)
+        plot_obj.close()
+        return plot_obj
 
     # Fallback to general base class if specific class not found/needed
     raise NotImplementedError(f"Static plot type '{plot_type}' not yet implemented in mdt orchestrator.")
@@ -85,6 +99,11 @@ def _generate_interactive_plot(name, plot_type, input_data, kwargs) -> Any:
     # Orchestrator Rule: Dispatch to monet_plots class-based API
     if "spatial" in plot_type.lower():
         plot_obj = monet_plots.SpatialImshowPlot(input_data, **kwargs)
+        logger.info("Generated Track B interactive plot '%s' via monet-plots", name)
+        return plot_obj.hvplot(**kwargs)
+    elif "timeseries" in plot_type.lower():
+        data = input_data.to_dataframe() if hasattr(input_data, "to_dataframe") else input_data
+        plot_obj = monet_plots.TimeSeriesPlot(data, **kwargs)
         logger.info("Generated Track B interactive plot '%s' via monet-plots", name)
         return plot_obj.hvplot(**kwargs)
 
