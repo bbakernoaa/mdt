@@ -75,8 +75,7 @@ class TestPrefectMissingError:
     """Verify helpful ImportError when Prefect is missing and engine is requested."""
 
     def test_get_engine_prefect_raises_importerror_when_missing(self):
-        """EngineRegistry.get_engine('prefect') should raise ImportError with
-        install instructions when Prefect is not installed.
+        """EngineRegistry.get_engine('prefect') should raise ImportError.
 
         Requirement 3.3: WHEN Prefect is not installed and the user selects
         the 'prefect' orchestrator, THE Engine_Registry SHALL raise a
@@ -94,9 +93,7 @@ class TestPrefectMissingError:
             EngineRegistry.get_engine("prefect")
 
     def test_register_prefect_factory_raises_when_import_fails(self):
-        """The real _register_prefect factory should raise ImportError with
-        helpful message when mdt.engine cannot import PrefectEngine due to
-        missing prefect dependency.
+        """The real _register_prefect factory should raise ImportError.
 
         Requirement 3.3: descriptive error instructing the user to install
         the 'prefect' extras group.
