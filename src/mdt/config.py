@@ -39,11 +39,43 @@ class ConfigParser:
         required_keys = ["data"]
         for key in required_keys:
             if key not in self.config:
-                logger.warning(f"Configuration is missing top-level key: '{key}'.")
+                logger.error(f"Configuration is missing top-level key: '{key}'.")
+                raise ValueError(f"Configuration is missing top-level key: '{key}'.")
 
         # Ensure 'data' is a dictionary if it exists
-        if "data" in self.config and not isinstance(self.config["data"], dict):
-            raise ValueError("'data' section in configuration must be a dictionary.")
+        if "data" in self.config:
+            if not isinstance(self.config["data"], dict):
+                raise ValueError("'data' section in configuration must be a dictionary.")
+            for name, details in self.config["data"].items():
+                if not isinstance(details, dict) or "type" not in details:
+                    raise ValueError(f"Data source '{name}' must have a 'type' field.")
+
+        if "pairing" in self.config:
+            if not isinstance(self.config["pairing"], dict):
+                raise ValueError("'pairing' section in configuration must be a dictionary.")
+            for name, details in self.config["pairing"].items():
+                if not isinstance(details, dict):
+                    raise ValueError(f"Pairing '{name}' must be a dictionary.")
+                if "source" not in details or "target" not in details:
+                    raise ValueError(f"Pairing '{name}' must specify both 'source' and 'target'.")
+
+        if "statistics" in self.config:
+            if not isinstance(self.config["statistics"], dict):
+                raise ValueError("'statistics' section in configuration must be a dictionary.")
+            for name, details in self.config["statistics"].items():
+                if not isinstance(details, dict):
+                    raise ValueError(f"Statistics task '{name}' must be a dictionary.")
+                if "input" not in details:
+                    raise ValueError(f"Statistics task '{name}' must specify an 'input'.")
+
+        if "plots" in self.config:
+            if not isinstance(self.config["plots"], dict):
+                raise ValueError("'plots' section in configuration must be a dictionary.")
+            for name, details in self.config["plots"].items():
+                if not isinstance(details, dict):
+                    raise ValueError(f"Plot task '{name}' must be a dictionary.")
+                if "input" not in details:
+                    raise ValueError(f"Plot task '{name}' must specify an 'input'.")
 
     @property
     def data(self):

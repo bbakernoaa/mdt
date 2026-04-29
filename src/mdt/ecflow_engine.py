@@ -8,11 +8,14 @@ loaded without ecFlow installed.
 """
 
 import json
+import logging
 import os
 
 import networkx as nx
 
 from mdt.engine_registry import Engine
+
+logger = logging.getLogger(__name__)
 
 #: Maps DAG ``task_type`` values to ecFlow family names.
 _FAMILY_MAP: dict[str, str] = {
@@ -148,6 +151,13 @@ class EcFlowEngine(Engine):
         """
         defs = self.build_suite()
         self.generate_task_wrappers()
+
+        # Save the suite definition to a file for user inspection
+        os.makedirs(self.task_script_dir, exist_ok=True)
+        def_path = os.path.join(self.task_script_dir, f"{self.suite_name}.def")
+        logger.info(f"Saving ecFlow suite definition to {def_path}")
+        defs.save_as_defs(def_path)
+
         self._load_and_start(defs)
         return {"suite": self.suite_name, "status": "started"}
 
