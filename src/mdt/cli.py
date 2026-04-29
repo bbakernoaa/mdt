@@ -2,15 +2,20 @@
 
 import argparse
 import logging
+import sys
 
+import yaml
+
+from mdt import __version__
 from mdt.config import load_config
 from mdt.dag import DAGBuilder
 from mdt.engine_registry import EngineRegistry
 
 
-def setup_logging():
+def setup_logging(debug=False):
     """Configures the standard logging format for MDT."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 def main():
@@ -19,10 +24,10 @@ def main():
 
     Parses command-line arguments and executes the requested subcommands.
     """
-    setup_logging()
-    logger = logging.getLogger(__name__)
-
     parser = argparse.ArgumentParser(description="Monet Environmental Verification System (MDT)")
+    parser.add_argument("--version", action="version", version=f"MDT {__version__}")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging and show full stack traces on error.")
+
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # The 'run' command
@@ -35,7 +40,17 @@ def main():
         help="Override the orchestrator backend specified in the YAML configuration.",
     )
 
+    # The 'validate' command
+    validate_parser = subparsers.add_parser("validate", help="Validate a YAML configuration file.")
+    validate_parser.add_argument("config_path", type=str, help="Path to the YAML configuration file.")
+
+    # The 'template' command
+    template_parser = subparsers.add_parser("template", help="Generate a sample YAML configuration file.")
+    template_parser.add_argument("--output", "-o", type=str, default="config_template.yaml", help="Output filename.")
+
     args = parser.parse_args()
+    setup_logging(debug=args.debug)
+    logger = logging.getLogger(__name__)
 
     if args.command == "run":
         try:
@@ -62,8 +77,48 @@ def main():
             logger.info("Workflow execution completed successfully.")
 
         except Exception as e:
-            logger.error(f"Error executing MDT workflow: {e}")
-            raise
+            if args.debug:
+                logger.exception("Error executing MDT workflow")
+            else:
+                logger.error(f"Error executing MDT workflow: {e}")
+            sys.exit(1)
+
+    elif args.command == "validate":
+        try:
+            logger.info(f"Validating configuration: {args.config_path}")
+            config = load_config(args.config_path)
+            # Try building the DAG as well, to catch reference errors
+            builder = DAGBuilder(config)
+            builder.build()
+            print(f"SUCCESS: Configuration '{args.config_path}' is valid.")
+        except Exception as e:
+            if args.debug:
+                logger.exception("Validation failed")
+            else:
+                logger.error(f"Validation failed: {e}")
+            sys.exit(1)
+
+    elif args.command == "template":
+        template = {
+            "data": {
+                "my_model": {"type": "cmaq", "kwargs": {"fname": "path/to/cmaq_output.nc"}},
+                "my_obs": {"type": "aeronet", "kwargs": {"fname": "path/to/aeronet_data.nc"}},
+            },
+            "pairing": {"eval_pair": {"source": "my_model", "target": "my_obs", "method": "interpolate"}},
+            "statistics": {
+                "basic_stats": {"input": "eval_pair", "metrics": ["rmse", "bias", "corr"], "kwargs": {"obs_var": "obs", "mod_var": "mod"}}
+            },
+            "plots": {"spatial_eval": {"input": "eval_pair", "type": "spatial", "kwargs": {"savename": "spatial_plot.png"}}},
+            "execution": {"default_cluster": "local", "clusters": {"local": {"mode": "local", "workers": 2}}},
+        }
+        try:
+            with open(args.output, "w") as f:
+                yaml.dump(template, f, sort_keys=False)
+            print(f"Generated template configuration: {args.output}")
+        except Exception as e:
+            logger.error(f"Failed to generate template: {e}")
+            sys.exit(1)
+
     else:
         parser.print_help()
 

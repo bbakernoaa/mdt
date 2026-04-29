@@ -26,7 +26,7 @@ class TestOrchestratorProperty:
         """When no orchestrator field is in the YAML, default to 'prefect'."""
         path = _write_yaml("""\
             data:
-              merra2: {}
+              merra2: {type: merra2}
             execution:
               clusters:
                 compute:
@@ -39,7 +39,7 @@ class TestOrchestratorProperty:
         """When orchestrator is set to 'ecflow', property returns 'ecflow'."""
         path = _write_yaml("""\
             data:
-              merra2: {}
+              merra2: {type: merra2}
             execution:
               orchestrator: ecflow
               clusters:
@@ -53,7 +53,7 @@ class TestOrchestratorProperty:
         """When orchestrator is explicitly set to 'prefect', property returns 'prefect'."""
         path = _write_yaml("""\
             data:
-              merra2: {}
+              merra2: {type: merra2}
             execution:
               orchestrator: prefect
               clusters:
@@ -71,7 +71,7 @@ class TestEcFlowKeysAccessible:
         """Verify ecFlow-specific keys are present in the execution property."""
         path = _write_yaml("""\
             data:
-              merra2: {}
+              merra2: {type: merra2}
             execution:
               orchestrator: ecflow
               ecflow_host: ecflow-server.local
@@ -94,7 +94,7 @@ class TestEcFlowKeysAccessible:
         """EcFlowEngine uses .get() with defaults; verify that works on the dict."""
         path = _write_yaml("""\
             data:
-              merra2: {}
+              merra2: {type: merra2}
             execution:
               orchestrator: ecflow
               clusters:
@@ -114,7 +114,7 @@ class TestEcFlowKeysAccessible:
         """When 'mode' is present without 'clusters', ecFlow keys must survive."""
         path = _write_yaml("""\
             data:
-              merra2: {}
+              merra2: {type: merra2}
             execution:
               orchestrator: ecflow
               ecflow_host: myhost
@@ -140,7 +140,7 @@ class TestEcFlowKeysAccessible:
         """Verify the orchestrator key is accessible from the execution property."""
         path = _write_yaml("""\
             data:
-              merra2: {}
+              merra2: {type: merra2}
             execution:
               orchestrator: ecflow
               clusters:
