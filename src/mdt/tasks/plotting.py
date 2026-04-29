@@ -52,40 +52,97 @@ def generate_plot(
         raise ValueError(f"Unknown track '{track}'. Use 'A' (Static) or 'B' (Interactive).")
 
 
-def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
-    """Track A: Static plotting with monet-plots (Matplotlib + Cartopy)."""
+def _find_plot_class(plot_type: str) -> Any:
+    """
+    Dynamically discover a plot class in monet_plots based on plot_type.
+
+    Parameters
+    ----------
+    plot_type : str
+        The name of the plot type (e.g., 'spatial', 'scatter', 'timeseries').
+
+    Returns
+    -------
+    Any
+        The plot class from monet_plots.
+
+    Raises
+    ------
+    ValueError
+        If no matching plot class is found.
+    """
     import monet_plots
 
+    # Priority mapping for common names
+    mapping = {
+        "spatial": "SpatialImshowPlot",
+        "scatter": "ScatterPlot",
+        "timeseries": "TimeSeriesPlot",
+        "taylor": "TaylorDiagramPlot",
+    }
+
+    class_name = mapping.get(plot_type.lower())
+    if class_name and hasattr(monet_plots, class_name):
+        return getattr(monet_plots, class_name)
+
+    # Fallback: Try to find a class that matches the plot_type string (case-insensitive)
+    for attr in dir(monet_plots):
+        if attr.lower() == plot_type.lower() or attr.lower() == f"{plot_type.lower()}plot":
+            return getattr(monet_plots, attr)
+
+    raise ValueError(f"Could not find a plot class in monet_plots for type: '{plot_type}'")
+
+
+def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
+    """Track A: Static plotting with monet-plots (Matplotlib + Cartopy)."""
     savename = kwargs.pop("savename", f"{name}.png")
 
-    # Orchestrator Rule: Dispatch to monet_plots class-based API
-    if "spatial" in plot_type.lower():
-        # Use SpatialImshowPlot for 2D grids (standard for model/obs)
-        plot_obj = monet_plots.SpatialImshowPlot(input_data, **kwargs)
-        plot_obj.plot(**kwargs)
+    try:
+        plot_class = _find_plot_class(plot_type)
+
+        # Some plots expect DataFrames (TimeSeries, Taylor), others expect Xarray (Spatial)
+        # We try to provide the expected format by default but allow the plot class to handle it.
+        # Based on monet-plots API, we use .to_dataframe() if it looks like a tabular plot.
+        if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
+            data = input_data.to_dataframe()
+        else:
+            data = input_data
+
+        plot_obj = plot_class(data, **kwargs)
+
+        # Dispatch to plot() method if it exists (for standard Matplotlib rendering)
+        if hasattr(plot_obj, "plot"):
+            plot_obj.plot(**kwargs)
+
         plot_obj.save(savename)
         logger.info("Saved Track A plot '%s' to %s via monet-plots", name, savename)
-        plot_obj.close()
-        return plot_obj
-    elif "scatter" in plot_type.lower():
-        plot_obj = monet_plots.ScatterPlot(input_data, **kwargs)
-        plot_obj.plot(**kwargs)
-        plot_obj.save(savename)
-        plot_obj.close()
+
+        if hasattr(plot_obj, "close"):
+            plot_obj.close()
+
         return plot_obj
 
-    # Fallback to general base class if specific class not found/needed
-    raise NotImplementedError(f"Static plot type '{plot_type}' not yet implemented in mdt orchestrator.")
+    except ValueError as e:
+        raise NotImplementedError(f"Static plot type '{plot_type}' not supported: {e}")
 
 
 def _generate_interactive_plot(name, plot_type, input_data, kwargs) -> Any:
     """Track B: Interactive plotting with monet-plots (HvPlot/GeoViews)."""
-    import monet_plots
+    try:
+        plot_class = _find_plot_class(plot_type)
 
-    # Orchestrator Rule: Dispatch to monet_plots class-based API
-    if "spatial" in plot_type.lower():
-        plot_obj = monet_plots.SpatialImshowPlot(input_data, **kwargs)
+        if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
+            data = input_data.to_dataframe()
+        else:
+            data = input_data
+
+        plot_obj = plot_class(data, **kwargs)
+
+        if not hasattr(plot_obj, "hvplot"):
+            raise AttributeError(f"Plot class '{plot_class.__name__}' does not support interactive hvplot.")
+
         logger.info("Generated Track B interactive plot '%s' via monet-plots", name)
         return plot_obj.hvplot(**kwargs)
 
-    raise NotImplementedError(f"Interactive plot type '{plot_type}' not yet implemented in mdt orchestrator.")
+    except (ValueError, AttributeError) as e:
+        raise NotImplementedError(f"Interactive plot type '{plot_type}' not supported: {e}")
