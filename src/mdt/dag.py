@@ -67,6 +67,14 @@ class DAGBuilder:
             if "kerchunk_file" in details:
                 kwargs["kerchunk_file"] = details.get("kerchunk_file")
 
+            zarr_store = details.get("zarr_store", {})
+            if zarr_store.get("enabled", False):
+                kwargs["use_virtualizarr"] = True
+                kwargs["virtualizarr_backend"] = zarr_store.get("backend", "kerchunk_json")
+                kwargs["store_path"] = zarr_store.get("store_path", f"./zarr_stores/{name}/")
+                if zarr_store.get("icechunk_repo"):
+                    kwargs["icechunk_repo"] = zarr_store["icechunk_repo"]
+
             self.graph.add_node(
                 node_id,
                 task_type="load_data",

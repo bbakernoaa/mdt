@@ -30,7 +30,20 @@ _FAMILY_MAP: dict[str, str] = {
 #: Template for the dispatch block inside each wrapper script.
 #: Maps ``TASK_TYPE`` values to the import + call statements.
 _DISPATCH_BLOCKS: dict[str, str] = {
-    "load_data": ("    from mdt.tasks.data import load_data\n    load_data(name=task_name, dataset_type=dataset_type, kwargs=kwargs)"),
+    "load_data": (
+        "    zarr_enabled = '%ZARR_STORE_ENABLED%'\n"
+        "    if zarr_enabled == 'true':\n"
+        "        kwargs['use_virtualizarr'] = True\n"
+        "        kwargs['virtualizarr_backend'] = '%ZARR_STORE_BACKEND%'\n"
+        "        zarr_path = '%ZARR_STORE_PATH%'\n"
+        "        if zarr_path:\n"
+        "            kwargs['store_path'] = zarr_path\n"
+        "        icechunk_repo = '%ZARR_STORE_ICECHUNK_REPO%'\n"
+        "        if icechunk_repo:\n"
+        "            kwargs['icechunk_repo'] = icechunk_repo\n"
+        "    from mdt.tasks.data import load_data\n"
+        "    load_data(name=task_name, dataset_type=dataset_type, kwargs=kwargs)"
+    ),
     "pair_data": (
         "    from mdt.tasks.pairing import pair_data\n"
         "    pair_data(name=task_name, method=kwargs.pop('method', ''),\n"
@@ -209,6 +222,25 @@ class EcFlowEngine(Engine):
             task.add_variable("METRICS", json.dumps(data.get("metrics") or []))
             task.add_variable("PLOT_TYPE", data.get("plot_type") or "")
             task.add_variable("CLUSTER", data.get("cluster") or "")
+
+            if task_type == "load_data":
+                node_kwargs = data.get("kwargs") or {}
+                task.add_variable(
+                    "ZARR_STORE_ENABLED",
+                    str(node_kwargs.get("use_virtualizarr", False)).lower(),
+                )
+                task.add_variable(
+                    "ZARR_STORE_BACKEND",
+                    node_kwargs.get("virtualizarr_backend", ""),
+                )
+                task.add_variable(
+                    "ZARR_STORE_PATH",
+                    node_kwargs.get("store_path", ""),
+                )
+                task.add_variable(
+                    "ZARR_STORE_ICECHUNK_REPO",
+                    node_kwargs.get("icechunk_repo", ""),
+                )
 
             families[family_name].add_task(task)
             node_tasks[node_id] = task

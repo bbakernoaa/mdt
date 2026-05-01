@@ -7,6 +7,8 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+VALID_ZARR_BACKENDS = {"kerchunk_json", "kerchunk_parquet", "icechunk"}
+
 
 class ConfigParser:
     """
@@ -49,6 +51,20 @@ class ConfigParser:
             for name, details in self.config["data"].items():
                 if not isinstance(details, dict) or "type" not in details:
                     raise ValueError(f"Data source '{name}' must have a 'type' field.")
+
+                zarr_store = details.get("zarr_store")
+                if zarr_store is not None:
+                    if not isinstance(zarr_store, dict):
+                        raise ValueError(f"Data source '{name}': 'zarr_store' must be a mapping.")
+                    enabled = zarr_store.get("enabled", False)
+                    if enabled:
+                        backend = zarr_store.get("backend", "kerchunk_json")
+                        if backend not in VALID_ZARR_BACKENDS:
+                            raise ValueError(
+                                f"Data source '{name}': unsupported zarr_store.backend '{backend}'. Supported: {sorted(VALID_ZARR_BACKENDS)}"
+                            )
+                        if backend == "icechunk" and not zarr_store.get("icechunk_repo"):
+                            raise ValueError(f"Data source '{name}': 'icechunk_repo' is required when zarr_store.backend is 'icechunk'.")
 
         if "pairing" in self.config:
             if not isinstance(self.config["pairing"], dict):
