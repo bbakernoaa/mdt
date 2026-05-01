@@ -47,11 +47,15 @@ where = ["src"]
 version = {attr = "mdt.__version__"}
 
 [tool.semantic_release]
-version_toml = []
 version_variables = ["src/mdt/__init__.py:__version__"]
-branch = "main"
 commit_message = "chore(release): v{version}"
 build_command = ""
+
+[tool.semantic_release.branches.main]
+match = "main"
+
+[tool.semantic_release.changelog]
+template_dir = ""
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "style", "refactor", "test"]

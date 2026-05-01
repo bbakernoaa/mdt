@@ -7,7 +7,6 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'bbakernoaa'
     concurrency: release
     permissions:
       id-token: write
@@ -18,15 +17,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Python Semantic Release
+        id: release
+        uses: python-semantic-release/python-semantic-release@v9.21.1
         with:
-          python-version: "3.11"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          changelog: "true"
+          commit: "true"
+          push: "true"
+          tag: "true"
+          vcs_release: "true"
 
-      - name: Install python-semantic-release
-        run: pip install python-semantic-release
-
-      - name: Semantic Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: semantic-release version --changelog --push --tag --commit
+      - name: Publish to GitHub Release
+        uses: python-semantic-release/publish-action@v9.21.1
+        if: steps.release.outputs.released == 'true'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.release.outputs.tag }}
