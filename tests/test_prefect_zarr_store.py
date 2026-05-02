@@ -23,7 +23,7 @@ sys.modules["prefect_dask.task_runners"] = prefect_dask_task_runners_mock
 # Don't mock dask at module level as it breaks xarray
 # Instead, we will patch what we need inside the tests
 
-from mdt.engine import PrefectEngine
+from mdt.engine import PrefectEngine  # noqa: E402
 
 
 class TestPrefectVirtualiZarrIntegration:
@@ -43,14 +43,17 @@ class TestPrefectVirtualiZarrIntegration:
                 m.with_options.return_value = m
                 m._original_func = f
                 return m
+
             return wrapper
 
         def mock_flow_decorator(*args, **kwargs):
             def wrapper(f):
                 def flow_runner(*a, **k):
                     return f(*a, **k)
+
                 flow_runner.with_options = MagicMock(return_value=flow_runner)
                 return flow_runner
+
             return wrapper
 
         prefect_mock.task.side_effect = mock_task_decorator
@@ -66,18 +69,15 @@ class TestPrefectVirtualiZarrIntegration:
         """Verify that with_options is called with correct tags and names for VirtualiZarr."""
         # Create a DAG with one VirtualiZarr node and one standard node
         dag = nx.DiGraph()
-        dag.add_node("load_vz",
-                     task_type="load_data",
-                     name="vz_ds",
-                     dataset_type="merra2",
-                     kwargs={"use_virtualizarr": True, "virtualizarr_backend": "kerchunk_json"},
-                     cluster="service")
-        dag.add_node("load_std",
-                     task_type="load_data",
-                     name="std_ds",
-                     dataset_type="cmaq",
-                     kwargs={},
-                     cluster="service")
+        dag.add_node(
+            "load_vz",
+            task_type="load_data",
+            name="vz_ds",
+            dataset_type="merra2",
+            kwargs={"use_virtualizarr": True, "virtualizarr_backend": "kerchunk_json"},
+            cluster="service",
+        )
+        dag.add_node("load_std", task_type="load_data", name="std_ds", dataset_type="cmaq", kwargs={}, cluster="service")
 
         config = MagicMock()
         config.execution = {"clusters": {"service": {"mode": "local"}}}
@@ -90,10 +90,12 @@ class TestPrefectVirtualiZarrIntegration:
         def capture_task(*args, **kwargs):
             task_name = kwargs.get("name")
             real_decorator = original_task_effect(*args, **kwargs)
+
             def wrapper(f):
                 t = real_decorator(f)
                 created_tasks[task_name] = t
                 return t
+
             return wrapper
 
         with patch.object(prefect_mock, "task", side_effect=capture_task):
@@ -126,6 +128,7 @@ class TestPrefectVirtualiZarrIntegration:
                 if kwargs.get("name") == "Load Data":
                     captured_func = f
                 return MagicMock()
+
             return wrapper
 
         with patch.object(prefect_mock, "task", side_effect=capture_func):
@@ -143,7 +146,8 @@ class TestPrefectVirtualiZarrIntegration:
         vz_kwargs = {
             "use_virtualizarr": True,
             "virtualizarr_backend": "icechunk",
-            "store_path": "/tmp/vz"
+            "store_path": "/tmp/vz",
+            "icechunk_repo": "s3://repo",
         }
         captured_func(name="my_vz", dataset_type="merra2", kwargs=vz_kwargs)
 
@@ -151,6 +155,7 @@ class TestPrefectVirtualiZarrIntegration:
         assert any("VirtualiZarr" in msg for msg in log_messages)
         assert any("backend: icechunk" in msg for msg in log_messages)
         assert any("store: /tmp/vz" in msg for msg in log_messages)
+        assert any("icechunk_repo: s3://repo" in msg for msg in log_messages)
 
         mock_logger.info.reset_mock()
         captured_func(name="my_std", dataset_type="cmaq", kwargs={})

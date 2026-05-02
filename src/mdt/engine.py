@@ -142,7 +142,11 @@ class PrefectEngine(Engine):
             if use_virtualizarr:
                 backend = kwargs.get("virtualizarr_backend", "N/A")
                 store_path = kwargs.get("store_path", "N/A")
-                logger.info(f"Loading data with VirtualiZarr: {name} (type: {dataset_type}, backend: {backend}, store: {store_path})")
+                icechunk_repo = kwargs.get("icechunk_repo", "N/A")
+                logger.info(
+                    f"Loading data with VirtualiZarr: {name} "
+                    f"(type: {dataset_type}, backend: {backend}, store: {store_path}, icechunk_repo: {icechunk_repo})"
+                )
             else:
                 logger.info(f"Loading data: {name} of type {dataset_type}")
             return load_data(name, dataset_type, kwargs)
