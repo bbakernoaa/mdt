@@ -13,7 +13,6 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-
 # ---------------------------------------------------------------------------
 # Fixtures (adapted from tests/test_ecflow_engine.py)
 # ---------------------------------------------------------------------------

@@ -1,12 +1,11 @@
 """Tests for ConfigParser zarr_store validation."""
 
+import pytest
 import yaml
-from hypothesis import given, HealthCheck, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from mdt.config import VALID_ZARR_BACKENDS, ConfigParser
-
-import pytest
 
 
 # Feature: virtualizarr-zarr-integration, Property 1: Invalid backend rejection
@@ -17,7 +16,8 @@ import pytest
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_invalid_backend_raises_value_error(backend, tmp_path):
     """For any string not in the set of valid backends, ConfigParser shall raise
-    a ValueError listing the supported backends when zarr_store.enabled is true."""
+    a ValueError listing the supported backends when zarr_store.enabled is true.
+    """
     config_dict = {
         "data": {
             "test_dataset": {
@@ -153,7 +153,8 @@ def test_zarr_store_not_a_dict_raises(tmp_path):
 
 def test_default_backend_when_omitted_no_error(tmp_path):
     """When backend key is omitted but enabled is true, should not raise
-    (default kerchunk_json is applied downstream)."""
+    (default kerchunk_json is applied downstream).
+    """
     cfg = _write_config(tmp_path, {
         "data": {
             "my_model": {

@@ -2,13 +2,11 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 import xarray as xr
-from hypothesis import given, HealthCheck, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from mdt.config import VALID_ZARR_BACKENDS
-
 
 # ---------------------------------------------------------------------------
 # Strategies
@@ -61,7 +59,8 @@ def _make_mock_dataset():
 def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
     """When zarr_store is enabled, monetio.load() SHALL receive
     use_virtualizarr, virtualizarr_backend, store_path, and (when present)
-    icechunk_repo."""
+    icechunk_repo.
+    """
     combined_kwargs = {**extra_kwargs, **vz_kwargs}
 
     mock_ds = _make_mock_dataset()
@@ -91,7 +90,8 @@ def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_disabled_omits_virtualizarr_params(extra_kwargs):
     """When zarr_store is absent or disabled, monetio.load() SHALL NOT receive
-    any VirtualiZarr parameters."""
+    any VirtualiZarr parameters.
+    """
     mock_ds = _make_mock_dataset()
 
     mock_monetio = MagicMock()
@@ -123,7 +123,8 @@ def test_disabled_omits_virtualizarr_params(extra_kwargs):
 def test_fallback_strips_virtualizarr_params(vz_kwargs, extra_kwargs):
     """When monetio.load() raises an exception with VirtualiZarr enabled,
     the retry call SHALL contain no VirtualiZarr keys but SHALL retain all
-    original non-VirtualiZarr keys unchanged."""
+    original non-VirtualiZarr keys unchanged.
+    """
     combined_kwargs = {**extra_kwargs, **vz_kwargs}
 
     mock_ds = _make_mock_dataset()
