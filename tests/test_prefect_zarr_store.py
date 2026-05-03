@@ -60,9 +60,21 @@ class TestPrefectVirtualiZarrIntegration:
         prefect_mock.flow.side_effect = mock_flow_decorator
 
         # Mock dask/distributed to avoid real cluster creation
-        mocker.patch("dask.distributed.LocalCluster", return_value=MagicMock())
-        mocker.patch("dask.distributed.Client", return_value=MagicMock())
-        # We need to mock dask.annotate as well
+        # We explicitly mock the distributed module in sys.modules to avoid AttributeError
+        mock_distributed = types.ModuleType("dask.distributed")
+        mock_distributed.LocalCluster = MagicMock()
+        mock_distributed.Client = MagicMock()
+        mocker.patch.dict(sys.modules, {"dask.distributed": mock_distributed})
+
+        # We also need to make sure dask itself has the distributed attribute if it's already in sys.modules
+        if "dask" in sys.modules:
+            sys.modules["dask"].distributed = mock_distributed
+        else:
+            mock_dask = types.ModuleType("dask")
+            mock_dask.distributed = mock_distributed
+            mock_dask.annotate = MagicMock()
+            mocker.patch.dict(sys.modules, {"dask": mock_dask})
+
         mocker.patch("dask.annotate", return_value=MagicMock())
 
     def test_execute_applies_virtualizarr_options(self, mocker):
