@@ -24,8 +24,9 @@ valid_dataset_names = st.from_regex(r"[a-zA-Z][a-zA-Z0-9_]{0,29}", fullmatch=Tru
 @settings(max_examples=100)
 @given(name=valid_dataset_names)
 def test_default_store_path_follows_naming_pattern(name):
-    """Property 2: For any valid dataset name, when zarr_store.enabled is true
-    and store_path is not specified, the DAGBuilder sets store_path to
+    """Property 2: For any valid dataset name, when zarr_store.enabled is true.
+
+    And store_path is not specified, the DAGBuilder sets store_path to
     './zarr_stores/{dataset_name}/'.
 
     **Validates: Requirements 1.7**

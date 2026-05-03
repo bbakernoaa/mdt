@@ -138,7 +138,17 @@ class PrefectEngine(Engine):
         @task(name="Load Data")
         def prefect_load_data(name, dataset_type, kwargs):
             logger = get_run_logger()
-            logger.info(f"Loading data: {name} of type {dataset_type}")
+            use_virtualizarr = kwargs.get("use_virtualizarr", False)
+            if use_virtualizarr:
+                backend = kwargs.get("virtualizarr_backend", "N/A")
+                store_path = kwargs.get("store_path", "N/A")
+                icechunk_repo = kwargs.get("icechunk_repo", "N/A")
+                logger.info(
+                    f"Loading data with VirtualiZarr: {name} "
+                    f"(type: {dataset_type}, backend: {backend}, store: {store_path}, icechunk_repo: {icechunk_repo})"
+                )
+            else:
+                logger.info(f"Loading data: {name} of type {dataset_type}")
             return load_data(name, dataset_type, kwargs)
 
         @task(name="Pair Data")
@@ -201,8 +211,17 @@ class PrefectEngine(Engine):
                 # Route the task to the specific worker pool via Dask Resource Annotation
                 with dask.annotate(resources={res_key: 1}):
                     if task_type == "load_data":
-                        future = prefect_load_data.submit(
-                            name=node_data["name"], dataset_type=node_data["dataset_type"], kwargs=node_data["kwargs"]
+                        name = node_data["name"]
+                        kwargs = node_data["kwargs"]
+                        use_virtualizarr = kwargs.get("use_virtualizarr", False)
+
+                        task_options = {}
+                        if use_virtualizarr:
+                            task_options["tags"] = ["virtualizarr"]
+                            task_options["task_run_name"] = f"Load Data: {name} [VirtualiZarr]"
+
+                        future = prefect_load_data.with_options(**task_options).submit(
+                            name=name, dataset_type=node_data["dataset_type"], kwargs=kwargs
                         )
                         task_outputs[node_id] = future
 

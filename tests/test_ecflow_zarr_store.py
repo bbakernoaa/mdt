@@ -13,7 +13,6 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-
 # ---------------------------------------------------------------------------
 # Fixtures (adapted from tests/test_ecflow_engine.py)
 # ---------------------------------------------------------------------------
@@ -129,7 +128,7 @@ class TestEcFlowZarrStoreVariablesProperty:
         store_path,
         icechunk_repo,
     ):
-        """**Validates: Requirements 6.1**
+        """**Validates: Requirements 6.1**.
 
         For any load_data DAG node whose kwargs contain use_virtualizarr=True,
         build_suite() sets ZARR_STORE_ENABLED, ZARR_STORE_BACKEND,
@@ -216,9 +215,7 @@ class TestEcFlowWrapperScriptContent:
         with open(path) as fh:
             return fh.read()
 
-    def test_wrapper_contains_zarr_store_enabled_variable(
-        self, _fake_ecflow, _make_config, tmp_path
-    ):
+    def test_wrapper_contains_zarr_store_enabled_variable(self, _fake_ecflow, _make_config, tmp_path):
         """The generated wrapper reads %ZARR_STORE_ENABLED% ecFlow variable."""
         from mdt.ecflow_engine import EcFlowEngine
 
@@ -237,9 +234,7 @@ class TestEcFlowWrapperScriptContent:
         content = self._read_script(engine, "load_obs")
         assert "%ZARR_STORE_ENABLED%" in content
 
-    def test_wrapper_contains_conditional_logic_for_disabled(
-        self, _fake_ecflow, _make_config, tmp_path
-    ):
+    def test_wrapper_contains_conditional_logic_for_disabled(self, _fake_ecflow, _make_config, tmp_path):
         """The wrapper has if/else logic that only injects VirtualiZarr params when enabled."""
         from mdt.ecflow_engine import EcFlowEngine
 
@@ -261,9 +256,7 @@ class TestEcFlowWrapperScriptContent:
         # When enabled, it should inject use_virtualizarr
         assert "kwargs['use_virtualizarr'] = True" in content
 
-    def test_wrapper_reads_all_zarr_store_variables(
-        self, _fake_ecflow, _make_config, tmp_path
-    ):
+    def test_wrapper_reads_all_zarr_store_variables(self, _fake_ecflow, _make_config, tmp_path):
         """The wrapper reads ZARR_STORE_BACKEND, ZARR_STORE_PATH, and ZARR_STORE_ICECHUNK_REPO."""
         from mdt.ecflow_engine import EcFlowEngine
 
@@ -385,9 +378,7 @@ class TestEcFlowZarrStoreVariablesUnit:
             engine.build_suite()
 
             v = _tracking_ecflow["tasks"]["load_ds"]._variables
-            assert v["ZARR_STORE_ICECHUNK_REPO"] == "", (
-                f"Expected empty ZARR_STORE_ICECHUNK_REPO for {backend}"
-            )
+            assert v["ZARR_STORE_ICECHUNK_REPO"] == "", f"Expected empty ZARR_STORE_ICECHUNK_REPO for {backend}"
 
             # Clean up tracking state for next iteration
             _tracking_ecflow["defs"].clear()

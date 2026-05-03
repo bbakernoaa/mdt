@@ -1,14 +1,13 @@
 """Tests for load_data VirtualiZarr parameter forwarding and fallback."""
 
+import logging
 from unittest.mock import MagicMock, patch
 
-import pytest
 import xarray as xr
-from hypothesis import given, HealthCheck, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from mdt.config import VALID_ZARR_BACKENDS
-
 
 # ---------------------------------------------------------------------------
 # Strategies
@@ -59,9 +58,11 @@ def _make_mock_dataset():
 @given(vz_kwargs=_enabled_kwargs, extra_kwargs=_non_vz_kwargs)
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
-    """When zarr_store is enabled, monetio.load() SHALL receive
+    """When zarr_store is enabled, monetio.load() SHALL receive.
+
     use_virtualizarr, virtualizarr_backend, store_path, and (when present)
-    icechunk_repo."""
+    icechunk_repo.
+    """
     combined_kwargs = {**extra_kwargs, **vz_kwargs}
 
     mock_ds = _make_mock_dataset()
@@ -69,9 +70,9 @@ def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
     mock_monetio = MagicMock()
     mock_monetio.load = MagicMock(return_value=mock_ds)
 
-    with patch.dict("sys.modules", {"monetio": mock_monetio}), \
-         patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
+    with patch.dict("sys.modules", {"monetio": mock_monetio}), patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
         from mdt.tasks.data import load_data
+
         load_data("test_ds", "cmaq", combined_kwargs)
 
     mock_monetio.load.assert_called_once()
@@ -90,16 +91,18 @@ def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
 @given(extra_kwargs=_non_vz_kwargs)
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_disabled_omits_virtualizarr_params(extra_kwargs):
-    """When zarr_store is absent or disabled, monetio.load() SHALL NOT receive
-    any VirtualiZarr parameters."""
+    """When zarr_store is absent or disabled, monetio.load() SHALL NOT receive.
+
+    any VirtualiZarr parameters.
+    """
     mock_ds = _make_mock_dataset()
 
     mock_monetio = MagicMock()
     mock_monetio.load = MagicMock(return_value=mock_ds)
 
-    with patch.dict("sys.modules", {"monetio": mock_monetio}), \
-         patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
+    with patch.dict("sys.modules", {"monetio": mock_monetio}), patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
         from mdt.tasks.data import load_data
+
         load_data("test_ds", "cmaq", extra_kwargs)
 
     mock_monetio.load.assert_called_once()
@@ -107,9 +110,7 @@ def test_disabled_omits_virtualizarr_params(extra_kwargs):
 
     # None of the VirtualiZarr keys should be present
     for key in _virtualizarr_keys:
-        assert key not in call_kwargs, (
-            f"VirtualiZarr key '{key}' should not be present when disabled"
-        )
+        assert key not in call_kwargs, f"VirtualiZarr key '{key}' should not be present when disabled"
 
 
 # ---------------------------------------------------------------------------
@@ -121,21 +122,21 @@ def test_disabled_omits_virtualizarr_params(extra_kwargs):
 @given(vz_kwargs=_enabled_kwargs, extra_kwargs=_non_vz_kwargs)
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_fallback_strips_virtualizarr_params(vz_kwargs, extra_kwargs):
-    """When monetio.load() raises an exception with VirtualiZarr enabled,
-    the retry call SHALL contain no VirtualiZarr keys but SHALL retain all
-    original non-VirtualiZarr keys unchanged."""
+    """When monetio.load() raises an exception with VirtualiZarr enabled.
+
+    The retry call SHALL contain no VirtualiZarr keys but SHALL retain all
+    original non-VirtualiZarr keys unchanged.
+    """
     combined_kwargs = {**extra_kwargs, **vz_kwargs}
 
     mock_ds = _make_mock_dataset()
 
     mock_monetio = MagicMock()
-    mock_monetio.load = MagicMock(
-        side_effect=[TypeError("unexpected kwarg"), mock_ds]
-    )
+    mock_monetio.load = MagicMock(side_effect=[TypeError("unexpected kwarg"), mock_ds])
 
-    with patch.dict("sys.modules", {"monetio": mock_monetio}), \
-         patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
+    with patch.dict("sys.modules", {"monetio": mock_monetio}), patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
         from mdt.tasks.data import load_data
+
         load_data("test_ds", "cmaq", combined_kwargs)
 
     # There should be exactly two calls: the original and the fallback retry
@@ -144,19 +145,12 @@ def test_fallback_strips_virtualizarr_params(vz_kwargs, extra_kwargs):
     # The retry (second) call should have no VirtualiZarr keys
     retry_kwargs = mock_monetio.load.call_args_list[1][1]
     for key in _virtualizarr_keys:
-        assert key not in retry_kwargs, (
-            f"VirtualiZarr key '{key}' should have been stripped in fallback retry"
-        )
+        assert key not in retry_kwargs, f"VirtualiZarr key '{key}' should have been stripped in fallback retry"
 
     # The retry call should retain all original non-VirtualiZarr keys unchanged
     for key, value in extra_kwargs.items():
-        assert key in retry_kwargs, (
-            f"Non-VirtualiZarr key '{key}' should be retained in fallback retry"
-        )
-        assert retry_kwargs[key] == value, (
-            f"Non-VirtualiZarr key '{key}' should have value '{value}' "
-            f"but got '{retry_kwargs[key]}'"
-        )
+        assert key in retry_kwargs, f"Non-VirtualiZarr key '{key}' should be retained in fallback retry"
+        assert retry_kwargs[key] == value, f"Non-VirtualiZarr key '{key}' should have value '{value}' but got '{retry_kwargs[key]}'"
 
 
 # ---------------------------------------------------------------------------
@@ -164,22 +158,21 @@ def test_fallback_strips_virtualizarr_params(vz_kwargs, extra_kwargs):
 # Requirements: 2.6, 7.2, 8.1, 8.2, 8.3
 # ---------------------------------------------------------------------------
 
-import logging
-
 
 class TestLoadDataLogging:
     """Unit tests for load_data INFO/WARNING logging and fallback behavior."""
 
     def _call_load_data(self, name, dataset_type, kwargs, mock_monetio):
         """Helper to call load_data with mocked monetio and update_history."""
-        with patch.dict("sys.modules", {"monetio": mock_monetio}), \
-             patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
+        with patch.dict("sys.modules", {"monetio": mock_monetio}), patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
             from mdt.tasks.data import load_data
+
             return load_data(name, dataset_type, kwargs)
 
     def test_info_log_before_virtualizarr_load(self, caplog):
-        """INFO log before VirtualiZarr load contains backend, store_path,
-        and icechunk_repo.
+        """INFO log before VirtualiZarr load contains backend, store_path.
+
+        And icechunk_repo.
 
         Validates: Requirement 8.1
         """
@@ -198,14 +191,8 @@ class TestLoadDataLogging:
             self._call_load_data("my_model", "cmaq", kwargs, mock_monetio)
 
         # Find the pre-load INFO message
-        pre_load_msgs = [
-            r.message for r in caplog.records
-            if r.levelno == logging.INFO and "VirtualiZarr" in r.message
-            and "backend=" in r.message
-        ]
-        assert len(pre_load_msgs) >= 1, (
-            "Expected an INFO log before VirtualiZarr load with backend info"
-        )
+        pre_load_msgs = [r.message for r in caplog.records if r.levelno == logging.INFO and "VirtualiZarr" in r.message and "backend=" in r.message]
+        assert len(pre_load_msgs) >= 1, "Expected an INFO log before VirtualiZarr load with backend info"
         msg = pre_load_msgs[0]
         assert "kerchunk_json" in msg
         assert "./zarr_stores/my_model/" in msg
@@ -230,19 +217,15 @@ class TestLoadDataLogging:
             self._call_load_data("obs", "cmaq", kwargs, mock_monetio)
 
         success_msgs = [
-            r.message for r in caplog.records
-            if r.levelno == logging.INFO
-            and "Successfully" in r.message
-            and "VirtualiZarr" in r.message
+            r.message for r in caplog.records if r.levelno == logging.INFO and "Successfully" in r.message and "VirtualiZarr" in r.message
         ]
-        assert len(success_msgs) >= 1, (
-            "Expected an INFO log confirming successful VirtualiZarr load"
-        )
+        assert len(success_msgs) >= 1, "Expected an INFO log confirming successful VirtualiZarr load"
         assert "obs" in success_msgs[0]
 
     def test_warning_log_on_fallback(self, caplog):
-        """WARNING log emitted when monetio.load() raises TypeError and
-        fallback is triggered.
+        """WARNING log emitted when monetio.load() raises TypeError.
+
+        And fallback is triggered.
 
         Validates: Requirements 2.6, 8.2
         """
@@ -254,28 +237,21 @@ class TestLoadDataLogging:
         }
         mock_ds = _make_mock_dataset()
         mock_monetio = MagicMock()
-        mock_monetio.load = MagicMock(
-            side_effect=[TypeError("unexpected keyword argument 'use_virtualizarr'"), mock_ds]
-        )
+        mock_monetio.load = MagicMock(side_effect=[TypeError("unexpected keyword argument 'use_virtualizarr'"), mock_ds])
 
         with caplog.at_level(logging.WARNING, logger="mdt.tasks.data"):
             self._call_load_data("model", "cmaq", kwargs, mock_monetio)
 
-        warning_msgs = [
-            r.message for r in caplog.records
-            if r.levelno == logging.WARNING
-            and "VirtualiZarr" in r.message
-        ]
-        assert len(warning_msgs) >= 1, (
-            "Expected a WARNING log when VirtualiZarr load fails and fallback triggers"
-        )
+        warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING and "VirtualiZarr" in r.message]
+        assert len(warning_msgs) >= 1, "Expected a WARNING log when VirtualiZarr load fails and fallback triggers"
         msg = warning_msgs[0]
         assert "model" in msg
         assert "Retrying" in msg or "retry" in msg.lower()
 
     def test_fallback_on_typeerror_retries_without_vz_params(self):
-        """When monetio.load() raises TypeError, fallback retries without
-        VirtualiZarr params but keeps other kwargs.
+        """When monetio.load() raises TypeError, fallback retries.
+
+        Without VirtualiZarr params but keeps other kwargs.
 
         Validates: Requirements 2.6, 7.2
         """
@@ -289,9 +265,7 @@ class TestLoadDataLogging:
         }
         mock_ds = _make_mock_dataset()
         mock_monetio = MagicMock()
-        mock_monetio.load = MagicMock(
-            side_effect=[TypeError("unexpected kwarg"), mock_ds]
-        )
+        mock_monetio.load = MagicMock(side_effect=[TypeError("unexpected kwarg"), mock_ds])
 
         self._call_load_data("aeronet", "cmaq", kwargs, mock_monetio)
 
@@ -304,16 +278,15 @@ class TestLoadDataLogging:
         # Second (fallback) call should strip VirtualiZarr keys
         retry_kwargs = mock_monetio.load.call_args_list[1][1]
         for key in _virtualizarr_keys:
-            assert key not in retry_kwargs, (
-                f"VirtualiZarr key '{key}' should be stripped in fallback"
-            )
+            assert key not in retry_kwargs, f"VirtualiZarr key '{key}' should be stripped in fallback"
         # Non-VirtualiZarr keys should be retained
         assert retry_kwargs["fname"] == "aeronet.nc"
         assert retry_kwargs["dates"] == "2023-06-01"
 
     def test_no_virtualizarr_params_when_disabled(self):
-        """When VirtualiZarr is not enabled, monetio.load() is called without
-        any VirtualiZarr keys.
+        """When VirtualiZarr is not enabled, monetio.load() is called.
+
+        Without any VirtualiZarr keys.
 
         Validates: Requirement 2.5
         """
@@ -330,8 +303,6 @@ class TestLoadDataLogging:
         mock_monetio.load.assert_called_once()
         call_kwargs = mock_monetio.load.call_args[1]
         for key in _virtualizarr_keys:
-            assert key not in call_kwargs, (
-                f"VirtualiZarr key '{key}' should not be present when disabled"
-            )
+            assert key not in call_kwargs, f"VirtualiZarr key '{key}' should not be present when disabled"
         assert call_kwargs["fname"] == "data.nc"
         assert call_kwargs["dates"] == "2023-01-01"
