@@ -28,13 +28,11 @@ mdt = "mdt.cli:main"
 
 [project.optional-dependencies]
 prefect = ["prefect>=2.0.0", "prefect-dask"]
-ecflow = ["ecflow"]
 dask = ["dask", "dask-jobqueue"]
 cubed = ["cubed", "cubed-xarray"]
 dev = ["ruff", "pytest", "pytest-mock", "hypothesis"]
 all = [
     "mdt[prefect]",
-    "mdt[ecflow]",
     "mdt[dask]",
     "mdt[cubed]",
     "mdt[dev]",
