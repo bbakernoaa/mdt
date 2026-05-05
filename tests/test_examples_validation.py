@@ -1,15 +1,19 @@
 import glob
 import os
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from mdt.config import ConfigParser
 from mdt.dag import DAGBuilder
 from mdt.engine_registry import Engine
+
 
 def get_example_configs():
     """Find all example YAML files in the docs/examples/ directory."""
     examples_dir = os.path.join(os.path.dirname(__file__), "..", "docs", "examples")
     return glob.glob(os.path.join(examples_dir, "*.yaml"))
+
 
 @pytest.mark.parametrize("config_path", get_example_configs())
 def test_example_configs_validate_and_execute(config_path):
@@ -37,12 +41,14 @@ def test_example_configs_validate_and_execute(config_path):
     result = engine.execute()
     assert result["status"] == "success"
 
+
 @patch("mdt.engine_registry.EngineRegistry.get_engine")
 @pytest.mark.parametrize("config_path", get_example_configs())
 def test_example_configs_cli_dry_run(mock_get_engine, config_path):
     """Simulate a CLI 'run' of the examples with a mocked engine to verify orchestration logic."""
-    from mdt.cli import main
     import sys
+
+    from mdt.cli import main
 
     # Mock the engine class and its execution
     mock_engine_instance = MagicMock()
@@ -52,7 +58,7 @@ def test_example_configs_cli_dry_run(mock_get_engine, config_path):
 
     # We use "prefect" because "mock" is not a valid choice in argparse
     test_args = ["mdt", "run", config_path, "--orchestrator", "prefect"]
-    with patch.object(sys, 'argv', test_args):
+    with patch.object(sys, "argv", test_args):
         # We expect this to run through and call our mock instead of real prefect
         try:
             main()
