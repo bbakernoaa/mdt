@@ -106,3 +106,95 @@ execution:
       mode: "local"
       workers: 4
 ```
+
+## GEFS-Aerosol vs. AERONET
+
+This example demonstrates how to evaluate **GEFS-Aerosol** model output against **AERONET** ground-based sun photometer observations.
+
+### YAML Configuration
+
+```yaml
+# docs/examples/gefs_aeronet.yaml
+
+data:
+  gefs_model:
+    type: "gefs"
+    kwargs:
+      dates: "2023-08-01"
+      product: "aerosol"
+
+  aeronet_obs:
+    type: "aeronet"
+    kwargs:
+      dates: "2023-08-01"
+
+pairing:
+  pair_gefs_aeronet:
+    source: "gefs_model"
+    target: "aeronet_obs"
+    method: "nearest"
+
+statistics:
+  aod_stats:
+    input: "pair_gefs_aeronet"
+    metrics: ["rmse", "mb", "corr"]
+    kwargs:
+      obs_var: "aod_550nm"
+      mod_var: "dust" # Example variable
+
+plots:
+  spatial_aod:
+    input: "pair_gefs_aeronet"
+    type: "spatial"
+    kwargs:
+      savename: "gefs_aeronet_spatial.png"
+
+  timeseries_aod:
+    input: "pair_gefs_aeronet"
+    type: "timeseries"
+    kwargs:
+      savename: "gefs_aeronet_ts.png"
+```
+
+## GFS vs. ISH-Lite
+
+This example compares **GFS** meteorological output with **ISH-Lite** (Integrated Surface Database Lite) observations for surface temperature.
+
+### YAML Configuration
+
+```yaml
+# docs/examples/gfs_ish_lite.yaml
+
+data:
+  gfs_model:
+    type: "gfs"
+    kwargs:
+      dates: "2023-08-01"
+
+  ish_lite_obs:
+    type: "ish_lite"
+    kwargs:
+      dates: "2023-08-01"
+
+pairing:
+  pair_gfs_ish:
+    source: "gfs_model"
+    target: "ish_lite_obs"
+    method: "nearest"
+
+statistics:
+  met_stats:
+    input: "pair_gfs_ish"
+    metrics: ["rmse", "mb"]
+    kwargs:
+      obs_var: "t2m"
+      mod_var: "TMP_2maboveground"
+
+plots:
+  timeseries_temp:
+    input: "pair_gfs_ish"
+    type: "timeseries"
+    kwargs:
+      savename: "gfs_ish_temp_ts.png"
+      column: "t2m"
+```

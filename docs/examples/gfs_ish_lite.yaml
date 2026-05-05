@@ -1,0 +1,32 @@
+data:
+  gfs_model:
+    type: "gfs"
+    kwargs:
+      dates: "2023-08-01"
+
+  ish_lite_obs:
+    type: "ish_lite"
+    kwargs:
+      dates: "2023-08-01"
+
+pairing:
+  pair_gfs_ish:
+    source: "gfs_model"
+    target: "ish_lite_obs"
+    method: "nearest"
+
+statistics:
+  met_stats:
+    input: "pair_gfs_ish"
+    metrics: ["rmse", "mb"]
+    kwargs:
+      obs_var: "t2m"
+      mod_var: "TMP_2maboveground"
+
+plots:
+  timeseries_temp:
+    input: "pair_gfs_ish"
+    type: "timeseries"
+    kwargs:
+      savename: "gfs_ish_temp_ts.png"
+      column: "t2m"

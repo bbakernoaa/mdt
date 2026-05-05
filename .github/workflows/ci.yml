@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   test:
@@ -16,17 +16,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          enable-cache: true
 
-      - name: Install dependencies
+      - name: Set up Micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: mdt
+          create-args: >-
+            python=${{ matrix.python-version }}
+            ecflow
+            esmpy
+          condarc: |
+            channels:
+              - conda-forge
+
+      - name: Install pip dependencies
+        shell: bash -el {0}
         run: |
-          pip install -e ".[dev]"
+          uv pip install -e ".[all]"
 
       - name: Lint
-        run: ruff check src/ tests/
+        shell: bash -el {0}
+        run: |
+          uv run ruff check src/ tests/
 
       - name: Test
-        run: pytest tests/ -v --tb=short
+        shell: bash -el {0}
+        run: |
+          uv run pytest tests/ -v --tb=short

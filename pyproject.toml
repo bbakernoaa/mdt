@@ -19,7 +19,7 @@ dependencies = [
     "numpy",
     "monetio @ git+https://github.com/bbakernoaa/monetio.git@develop",
     "monet @ git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements",
-    "monet-stats @ git+https://github.com/bbakernoaa/monet-stats@dev",
+    "monet-stats @ git+https://github.com/noaa-oar-arl/monet-stats",
     "monet-plots @ git+https://github.com/bbakernoaa/monet-plots.git",
 ]
 
@@ -28,13 +28,11 @@ mdt = "mdt.cli:main"
 
 [project.optional-dependencies]
 prefect = ["prefect>=2.0.0", "prefect-dask"]
-ecflow = ["ecflow"]
 dask = ["dask", "dask-jobqueue"]
 cubed = ["cubed", "cubed-xarray"]
 dev = ["ruff", "pytest", "pytest-mock", "hypothesis"]
 all = [
     "mdt[prefect]",
-    "mdt[ecflow]",
     "mdt[dask]",
     "mdt[cubed]",
     "mdt[dev]",

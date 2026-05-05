@@ -26,7 +26,7 @@ mamba activate mdt
 # Install dependencies from MONET ecosystem
 pip install git+https://github.com/bbakernoaa/monetio.git@develop
 pip install git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements
-pip install git+https://github.com/bbakernoaa/monet-stats@dev
+pip install git+https://github.com/noaa-oar-arl/monet-stats
 pip install git+https://github.com/bbakernoaa/monet-plots.git --no-deps
 
 # Install MDT
