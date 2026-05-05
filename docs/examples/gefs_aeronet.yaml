@@ -1,0 +1,38 @@
+data:
+  gefs_model:
+    type: "gefs"
+    kwargs:
+      dates: "2023-08-01"
+      product: "aerosol"
+
+  aeronet_obs:
+    type: "aeronet"
+    kwargs:
+      dates: "2023-08-01"
+
+pairing:
+  pair_gefs_aeronet:
+    source: "gefs_model"
+    target: "aeronet_obs"
+    method: "nearest"
+
+statistics:
+  aod_stats:
+    input: "pair_gefs_aeronet"
+    metrics: ["rmse", "mb", "corr"]
+    kwargs:
+      obs_var: "aod_550nm"
+      mod_var: "dust" # Example variable
+
+plots:
+  spatial_aod:
+    input: "pair_gefs_aeronet"
+    type: "spatial"
+    kwargs:
+      savename: "gefs_aeronet_spatial.png"
+
+  timeseries_aod:
+    input: "pair_gefs_aeronet"
+    type: "timeseries"
+    kwargs:
+      savename: "gefs_aeronet_ts.png"
