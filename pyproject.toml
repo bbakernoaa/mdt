@@ -17,10 +17,10 @@ dependencies = [
     "xarray",
     "pandas",
     "numpy",
-    "monet-stats @ git+https://github.com/noaa-oar-arl/monet-stats",
-    "monet-plots @ git+https://github.com/bbakernoaa/monet-plots.git",
     "monetio @ git+https://github.com/bbakernoaa/monetio.git@develop",
     "monet @ git+https://github.com/bbakernoaa/monet.git@feature/interp_improvements",
+    "monet-stats @ git+https://github.com/noaa-oar-arl/monet-stats",
+    "monet-plots @ git+https://github.com/bbakernoaa/monet-plots.git",
 ]
 
 [project.scripts]
