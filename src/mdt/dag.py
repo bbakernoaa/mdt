@@ -14,7 +14,7 @@ class DAGBuilder:
 
     def __init__(self, config: "ConfigParser"):
         self.config = config
-        self.graph = nx.DiGraph()
+        self.graph: nx.DiGraph = nx.DiGraph()
 
     def build(self) -> nx.DiGraph:
         """

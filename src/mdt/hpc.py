@@ -76,7 +76,7 @@ class HPCProfileFactory:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Hera defaults.")
-        defaults = {
+        defaults: Dict[str, Any] = {
             "cores": 40,
             "memory": "120GB",
             "processes": 1,
@@ -101,7 +101,7 @@ class HPCProfileFactory:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Jet defaults.")
-        defaults = {
+        defaults: Dict[str, Any] = {
             "cores": 24,  # Jet typically has variations, setting a safe default
             "memory": "60GB",
             "processes": 1,
@@ -123,7 +123,7 @@ class HPCProfileFactory:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Orion defaults.")
-        defaults = {
+        defaults: Dict[str, Any] = {
             "cores": 40,
             "memory": "180GB",
             "processes": 1,
@@ -170,7 +170,7 @@ class HPCProfileFactory:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Gaea defaults.")
-        defaults = {
+        defaults: Dict[str, Any] = {
             "cores": 36,
             "memory": "120GB",
             "processes": 1,
@@ -192,7 +192,7 @@ class HPCProfileFactory:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Ursa defaults.")
-        defaults = {
+        defaults: Dict[str, Any] = {
             "cores": 36,  # Adjust cores/memory as appropriate for Ursa hardware
             "memory": "120GB",
             "processes": 1,
@@ -215,7 +215,7 @@ class HPCProfileFactory:
 
         # WCOSS2 typically uses PBS Pro
         logger.info("Initializing PBS cluster with WCOSS2 defaults.")
-        defaults = {
+        defaults: Dict[str, Any] = {
             "cores": 128,
             "memory": "256GB",
             "processes": 1,

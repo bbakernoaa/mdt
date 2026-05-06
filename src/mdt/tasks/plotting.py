@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, cast
 
 import pandas as pd
 import xarray as xr
@@ -109,7 +109,8 @@ def _generate_static_plot(
         # We try to provide the expected format by default but allow the plot class to handle it.
         # Based on monet-plots API, we use .to_dataframe() if it looks like a tabular plot.
         if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
-            data = input_data.to_dataframe()
+            # Use cast to Any to avoid "Series[Any]" not callable error
+            data = cast(Any, input_data).to_dataframe()
         else:
             data = input_data
 
@@ -142,7 +143,8 @@ def _generate_interactive_plot(
         plot_class = _find_plot_class(plot_type)
 
         if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
-            data = input_data.to_dataframe()
+            # Use cast to Any to avoid "Series[Any]" not callable error
+            data = cast(Any, input_data).to_dataframe()
         else:
             data = input_data
 

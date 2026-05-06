@@ -66,7 +66,7 @@ def pair_data(
         paired_data = update_history(paired_data, msg)
 
         logger.info("Successfully paired data '%s'", name)
-        return paired_data
+        return cast(Union[xr.Dataset, xr.DataArray, pd.DataFrame], paired_data)
 
     except ImportError as e:
         logger.error("Required package for pairing not found: %s", e)

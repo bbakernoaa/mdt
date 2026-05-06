@@ -2,7 +2,7 @@
 
 import logging
 import subprocess
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, cast
 
 import networkx as nx
 
@@ -74,7 +74,7 @@ class PrefectEngine(Engine):
             if mode == "local":
                 logger.info(f"Scaling local workers for '{cluster_name}'")
                 # Scale the central cluster and explicitly assign resources
-                primary_cluster.scale(workers, resources={res_name: 1})
+                primary_cluster.scale(workers)
             else:
                 logger.info(f"Setting up HPC cluster '{cluster_name}' (mode: {mode}) connecting to {scheduler_address}")
 
@@ -302,6 +302,6 @@ class PrefectEngine(Engine):
         cluster = self._setup_dask_clusters()
 
         # Execute the Prefect flow, explicitly overriding the task_runner with our central cluster
-        results: Dict[str, Any] = mdt_flow.with_options(task_runner=DaskTaskRunner(address=cluster.scheduler_address))()
+        results: Dict[str, Any] = mdt_flow.with_options(task_runner=cast(Any, DaskTaskRunner(address=cluster.scheduler_address)))()
 
         return results
