@@ -220,4 +220,5 @@ def _execute_metric(
         mod = data[mod_var]
         return cast(pd.Series, func(obs, mod, **call_kwargs))
 
-    return cast(Union[xr.Dataset, xr.DataArray, pd.Series], func(data, **call_kwargs))
+    # This should be unreachable if data is one of the supported types
+    raise TypeError(f"Unsupported data type for statistics: {type(data)}")
