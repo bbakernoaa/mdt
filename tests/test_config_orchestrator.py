@@ -7,7 +7,7 @@ import pytest
 from mdt.config import ConfigParser
 
 
-@pytest.fixture()
+@pytest.fixture
 def _write_yaml(tmp_path):
     """Factory that writes a YAML string to a temp file and returns its path."""
 

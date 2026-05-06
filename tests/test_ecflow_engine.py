@@ -12,7 +12,7 @@ import networkx as nx
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture
 def _fake_ecflow(monkeypatch):
     """Inject a fake ``ecflow`` module so tests run without the real package."""
     fake = types.ModuleType("ecflow")
@@ -28,7 +28,7 @@ def _fake_ecflow(monkeypatch):
     return fake
 
 
-@pytest.fixture()
+@pytest.fixture
 def simple_dag():
     """A minimal DAG with one load node."""
     g = nx.DiGraph()
@@ -36,7 +36,7 @@ def simple_dag():
     return g
 
 
-@pytest.fixture()
+@pytest.fixture
 def _make_config():
     """Factory that builds a mock config with a given execution dict."""
 
@@ -197,7 +197,7 @@ class TestEcFlowEngineStubs:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def _tracking_ecflow(monkeypatch):
     """Fake ``ecflow`` module that records constructor arguments.
 
@@ -248,7 +248,7 @@ def _tracking_ecflow(monkeypatch):
     return created
 
 
-@pytest.fixture()
+@pytest.fixture
 def multi_node_dag():
     """DAG with two load nodes feeding one pair node — tests triggers."""
     g = nx.DiGraph()
@@ -281,7 +281,7 @@ def multi_node_dag():
     return g
 
 
-@pytest.fixture()
+@pytest.fixture
 def full_pipeline_dag():
     """DAG covering all five task types for family-creation tests."""
     g = nx.DiGraph()

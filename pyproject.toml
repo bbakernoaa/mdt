@@ -82,6 +82,22 @@ ignore = [
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",    # Use of assert
+    "S108",    # Insecure temporary file
+    "S110",    # try-except-pass
+    "ARG001",  # Unused function argument
+    "ARG002",  # Unused method argument
+    "ARG005",  # Unused lambda argument
+    "PT019",   # Fixture without value injected as parameter
+    "PTH",     # Use Pathlib (we'll allow OS module in tests for now)
+    "RUF002",  # Ambiguous unicode character
+    "RUF015",  # Prefer next(iter())
+    "RUF043",  # match= contains metacharacters
+    "PT017",   # assertion on exception in except block
+]
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
