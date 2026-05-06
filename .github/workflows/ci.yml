@@ -94,10 +94,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Ensure we have the branch information needed by PSR
+          ref: ${{ github.head_ref }}
       - name: Python Semantic Release Dry Run
         uses: python-semantic-release/python-semantic-release@v9.21.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # The --dry-run flag is a command-level option for 'version', not a root option.
-          # We use additional_options to pass it to the default command.
-          additional_options: "--dry-run"
+          # Use args to pass command-level options like --dry-run to the default 'version' command
+          args: "--dry-run"
