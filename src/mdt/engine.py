@@ -5,8 +5,6 @@ import subprocess
 from typing import TYPE_CHECKING, Any, Dict, List, cast
 
 import networkx as nx
-from prefect import flow, get_run_logger, task
-from prefect_dask.task_runners import DaskTaskRunner
 
 from mdt.engine_registry import Engine
 from mdt.hpc import HPCProfileFactory
@@ -21,9 +19,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@task(name="Load Data")  # type: ignore
 def prefect_load_data(name: str, dataset_type: str, kwargs: Dict[str, Any]) -> Any:
     """Prefect task wrapper for load_data."""
+    from prefect import get_run_logger
+
     logger = get_run_logger()
     use_virtualizarr = kwargs.get("use_virtualizarr", False)
     if use_virtualizarr:
@@ -39,33 +38,37 @@ def prefect_load_data(name: str, dataset_type: str, kwargs: Dict[str, Any]) -> A
     return load_data(name, dataset_type, kwargs)
 
 
-@task(name="Pair Data")  # type: ignore
 def prefect_pair_data(name: str, method: str, source_data: Any, target_data: Any, kwargs: Dict[str, Any]) -> Any:
     """Prefect task wrapper for pair_data."""
+    from prefect import get_run_logger
+
     logger = get_run_logger()
     logger.info(f"Pairing data: {name} using {method}")
     return pair_data(name, method, source_data, target_data, kwargs)
 
 
-@task(name="Combine Paired Data")  # type: ignore
 def prefect_combine_paired_data(paired_data: Dict[str, Any], dim: str = "model") -> Any:
     """Prefect task wrapper for combine_paired_data."""
+    from prefect import get_run_logger
+
     logger = get_run_logger()
     logger.info(f"Combining {len(paired_data)} paired datasets along '{dim}'")
     return combine_paired_data(paired_data, dim=dim)
 
 
-@task(name="Compute Statistics")  # type: ignore
 def prefect_compute_statistics(name: str, metrics: List[str], input_data: Any, kwargs: Dict[str, Any]) -> Any:
     """Prefect task wrapper for compute_statistics."""
+    from prefect import get_run_logger
+
     logger = get_run_logger()
     logger.info(f"Computing statistics: {name} for metrics {metrics}")
     return compute_statistics(name, metrics, input_data, kwargs)
 
 
-@task(name="Generate Plot")  # type: ignore
 def prefect_generate_plot(name: str, plot_type: str, input_data: Any, kwargs: Dict[str, Any]) -> Any:
     """Prefect task wrapper for generate_plot."""
+    from prefect import get_run_logger
+
     logger = get_run_logger()
     logger.info(f"Generating plot: {name} of type {plot_type}")
     return generate_plot(name, plot_type, input_data, kwargs)
@@ -184,14 +187,24 @@ class PrefectEngine(Engine):
             A dictionary mapping node IDs from the task graph to the Dask futures
             representing their completion state and results.
         """
+        from prefect import flow, task
+        from prefect_dask.task_runners import DaskTaskRunner
+
+        # Prefect Task Wrappers — defined here so the @task decorator is only
+        # evaluated when Prefect is actually installed and execute() is called.
+        # Requirement 3.5: We maintain lazy imports.
+
+        p_load_data = task(name="Load Data")(prefect_load_data)
+        p_pair_data = task(name="Pair Data")(prefect_pair_data)
+        p_combine_paired_data = task(name="Combine Paired Data")(prefect_combine_paired_data)
+        p_compute_statistics = task(name="Compute Statistics")(prefect_compute_statistics)
+        p_generate_plot = task(name="Generate Plot")(prefect_generate_plot)
+
         import dask
 
         # Define the Prefect flow inline to capture the instance variables
         @flow(name="MDT Verification Workflow")  # type: ignore
         def mdt_flow() -> Dict[str, Any]:
-            logger = get_run_logger()
-            logger.info("Starting MDT Workflow...")
-
             # Dictionary to store the output futures of each task
             task_outputs: Dict[str, Any] = {}
 
@@ -220,7 +233,7 @@ class PrefectEngine(Engine):
                             task_options["tags"] = ["virtualizarr"]
                             task_options["task_run_name"] = f"Load Data: {name} [VirtualiZarr]"
 
-                        future = prefect_load_data.with_options(**task_options).submit(
+                        future = p_load_data.with_options(**task_options).submit(
                             name=name, dataset_type=node_data["dataset_type"], kwargs=kwargs
                         )
                         task_outputs[node_id] = future
@@ -240,7 +253,7 @@ class PrefectEngine(Engine):
                         if target_name:
                             target_node = f"load_{target_name}"
 
-                        future = prefect_pair_data.submit(
+                        future = p_pair_data.submit(
                             name=node_data["name"],
                             method=node_data["method"],
                             source_data=task_outputs.get(source_node) if source_node else None,
@@ -264,7 +277,7 @@ class PrefectEngine(Engine):
                             else:
                                 logger.warning(f"Predecessor {pred_node_id} not found for combine task {node_id}")
 
-                        future = prefect_combine_paired_data.submit(
+                        future = p_combine_paired_data.submit(
                             paired_data=paired_data_inputs,
                             dim=node_data.get("dim", "model"),
                         )
@@ -273,7 +286,7 @@ class PrefectEngine(Engine):
                     elif task_type == "compute_statistics":
                         # Only one predecessor (input)
                         input_node = predecessors[0] if predecessors else None
-                        future = prefect_compute_statistics.submit(
+                        future = p_compute_statistics.submit(
                             name=node_data["name"],
                             metrics=node_data["metrics"],
                             input_data=task_outputs.get(input_node) if input_node else None,
@@ -284,7 +297,7 @@ class PrefectEngine(Engine):
                     elif task_type == "generate_plot":
                         # Only one predecessor (input)
                         input_node = predecessors[0] if predecessors else None
-                        future = prefect_generate_plot.submit(
+                        future = p_generate_plot.submit(
                             name=node_data["name"],
                             plot_type=node_data["plot_type"],
                             input_data=task_outputs.get(input_node) if input_node else None,
