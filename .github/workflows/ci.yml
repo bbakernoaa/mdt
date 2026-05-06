@@ -98,4 +98,6 @@ jobs:
         uses: python-semantic-release/python-semantic-release@v9.21.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          root_options: "-vv --dry-run"
+          # The --dry-run flag is a command-level option for 'version', not a root option.
+          # We use additional_options to pass it to the default command.
+          additional_options: "--dry-run"
