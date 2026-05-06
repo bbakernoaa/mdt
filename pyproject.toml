@@ -114,6 +114,10 @@ warn_unreachable = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
+module = "mdt.engine"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
 module = [
     "monetio.*",
     "monet.*",
