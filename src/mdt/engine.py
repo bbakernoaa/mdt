@@ -5,6 +5,8 @@ import subprocess
 from typing import TYPE_CHECKING, Any, Dict, List, cast
 
 import networkx as nx
+from prefect import flow, get_run_logger, task
+from prefect_dask.task_runners import DaskTaskRunner
 
 from mdt.engine_registry import Engine
 from mdt.hpc import HPCProfileFactory
@@ -17,6 +19,56 @@ if TYPE_CHECKING:
     from mdt.config import ConfigParser
 
 logger = logging.getLogger(__name__)
+
+
+@task(name="Load Data")  # type: ignore
+def prefect_load_data(name: str, dataset_type: str, kwargs: Dict[str, Any]) -> Any:
+    """Prefect task wrapper for load_data."""
+    logger = get_run_logger()
+    use_virtualizarr = kwargs.get("use_virtualizarr", False)
+    if use_virtualizarr:
+        backend = kwargs.get("virtualizarr_backend", "N/A")
+        store_path = kwargs.get("store_path", "N/A")
+        icechunk_repo = kwargs.get("icechunk_repo", "N/A")
+        logger.info(
+            f"Loading data with VirtualiZarr: {name} "
+            f"(type: {dataset_type}, backend: {backend}, store: {store_path}, icechunk_repo: {icechunk_repo})"
+        )
+    else:
+        logger.info(f"Loading data: {name} of type {dataset_type}")
+    return load_data(name, dataset_type, kwargs)
+
+
+@task(name="Pair Data")  # type: ignore
+def prefect_pair_data(name: str, method: str, source_data: Any, target_data: Any, kwargs: Dict[str, Any]) -> Any:
+    """Prefect task wrapper for pair_data."""
+    logger = get_run_logger()
+    logger.info(f"Pairing data: {name} using {method}")
+    return pair_data(name, method, source_data, target_data, kwargs)
+
+
+@task(name="Combine Paired Data")  # type: ignore
+def prefect_combine_paired_data(paired_data: Dict[str, Any], dim: str = "model") -> Any:
+    """Prefect task wrapper for combine_paired_data."""
+    logger = get_run_logger()
+    logger.info(f"Combining {len(paired_data)} paired datasets along '{dim}'")
+    return combine_paired_data(paired_data, dim=dim)
+
+
+@task(name="Compute Statistics")  # type: ignore
+def prefect_compute_statistics(name: str, metrics: List[str], input_data: Any, kwargs: Dict[str, Any]) -> Any:
+    """Prefect task wrapper for compute_statistics."""
+    logger = get_run_logger()
+    logger.info(f"Computing statistics: {name} for metrics {metrics}")
+    return compute_statistics(name, metrics, input_data, kwargs)
+
+
+@task(name="Generate Plot")  # type: ignore
+def prefect_generate_plot(name: str, plot_type: str, input_data: Any, kwargs: Dict[str, Any]) -> Any:
+    """Prefect task wrapper for generate_plot."""
+    logger = get_run_logger()
+    logger.info(f"Generating plot: {name} of type {plot_type}")
+    return generate_plot(name, plot_type, input_data, kwargs)
 
 
 class PrefectEngine(Engine):
@@ -132,56 +184,10 @@ class PrefectEngine(Engine):
             A dictionary mapping node IDs from the task graph to the Dask futures
             representing their completion state and results.
         """
-        from prefect import flow, get_run_logger, task
-        from prefect_dask.task_runners import DaskTaskRunner
-
-        # Prefect Task Wrappers — defined here so the @task decorator is only
-        # evaluated when Prefect is actually installed and execute() is called.
-
-        @task(name="Load Data")  # type: ignore[untyped-decorator]
-        def prefect_load_data(name: str, dataset_type: str, kwargs: Dict[str, Any]) -> Any:
-            logger = get_run_logger()
-            use_virtualizarr = kwargs.get("use_virtualizarr", False)
-            if use_virtualizarr:
-                backend = kwargs.get("virtualizarr_backend", "N/A")
-                store_path = kwargs.get("store_path", "N/A")
-                icechunk_repo = kwargs.get("icechunk_repo", "N/A")
-                logger.info(
-                    f"Loading data with VirtualiZarr: {name} "
-                    f"(type: {dataset_type}, backend: {backend}, store: {store_path}, icechunk_repo: {icechunk_repo})"
-                )
-            else:
-                logger.info(f"Loading data: {name} of type {dataset_type}")
-            return load_data(name, dataset_type, kwargs)
-
-        @task(name="Pair Data")  # type: ignore[untyped-decorator]
-        def prefect_pair_data(name: str, method: str, source_data: Any, target_data: Any, kwargs: Dict[str, Any]) -> Any:
-            logger = get_run_logger()
-            logger.info(f"Pairing data: {name} using {method}")
-            return pair_data(name, method, source_data, target_data, kwargs)
-
-        @task(name="Combine Paired Data")  # type: ignore[untyped-decorator]
-        def prefect_combine_paired_data(paired_data: Dict[str, Any], dim: str = "model") -> Any:
-            logger = get_run_logger()
-            logger.info(f"Combining {len(paired_data)} paired datasets along '{dim}'")
-            return combine_paired_data(paired_data, dim=dim)
-
-        @task(name="Compute Statistics")  # type: ignore[untyped-decorator]
-        def prefect_compute_statistics(name: str, metrics: List[str], input_data: Any, kwargs: Dict[str, Any]) -> Any:
-            logger = get_run_logger()
-            logger.info(f"Computing statistics: {name} for metrics {metrics}")
-            return compute_statistics(name, metrics, input_data, kwargs)
-
-        @task(name="Generate Plot")  # type: ignore[untyped-decorator]
-        def prefect_generate_plot(name: str, plot_type: str, input_data: Any, kwargs: Dict[str, Any]) -> Any:
-            logger = get_run_logger()
-            logger.info(f"Generating plot: {name} of type {plot_type}")
-            return generate_plot(name, plot_type, input_data, kwargs)
-
         import dask
 
         # Define the Prefect flow inline to capture the instance variables
-        @flow(name="MDT Verification Workflow")  # type: ignore[untyped-decorator]
+        @flow(name="MDT Verification Workflow")  # type: ignore
         def mdt_flow() -> Dict[str, Any]:
             logger = get_run_logger()
             logger.info("Starting MDT Workflow...")
@@ -201,15 +207,6 @@ class PrefectEngine(Engine):
                 # We will use Prefect's `.with_options` to inject standard Dask resources.
                 # If target_cluster is None, default to "COMPUTE"
                 res_key = target_cluster.upper() if target_cluster else "COMPUTE"
-
-                # In Prefect, we can't directly inject `dask_resources` into `.submit()`,
-                # but we can use `dask.annotate` if we map it to `client.submit` directly.
-                # To maintain Prefect orchestration and Dask scaling, we will
-                # use `dask.annotate` and rely on Prefect picking up the context.
-                # To fix the context loss, we wrap the native python functions as `dask.delayed`
-                # or just use `prefect_task.with_options(tags=[res_key]).submit()`.
-
-                # For robust HPC mapping, let's submit natively to Dask while tracking:
 
                 # Route the task to the specific worker pool via Dask Resource Annotation
                 with dask.annotate(resources={res_key: 1}):

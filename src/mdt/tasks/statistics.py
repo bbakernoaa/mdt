@@ -215,10 +215,7 @@ def _execute_metric(
             return cast(Union[xr.Dataset, xr.DataArray], func(target_obs, target_mod, **call_kwargs))
         return cast(Union[xr.Dataset, xr.DataArray], func(target_mod, **call_kwargs))
 
-    elif isinstance(data, pd.DataFrame):
-        obs = data[obs_var]
-        mod = data[mod_var]
-        return cast(pd.Series, func(obs, mod, **call_kwargs))
-
-    # This should be unreachable if data is one of the supported types
-    raise TypeError(f"Unsupported data type for statistics: {type(data)}")
+    # data must be pd.DataFrame based on the Union type hint
+    obs = data[obs_var]
+    mod = data[mod_var]
+    return cast(pd.Series, func(obs, mod, **call_kwargs))
