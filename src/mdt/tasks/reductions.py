@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Union
+from typing import Any, List, Optional, Union, cast
 
 import monet_stats
 import xarray as xr
@@ -46,7 +46,7 @@ def spatial_mean(
 def calculate_reduction(
     obj: Union[xr.DataArray, xr.Dataset],
     method: str = "mean",
-    dim: Union[str, list] = None,
+    dim: Optional[Union[str, List[str]]] = None,
     force_weighted: bool = False,
     **kwargs: Any,
 ) -> Union[xr.DataArray, xr.Dataset]:
@@ -85,6 +85,7 @@ def calculate_reduction(
 
     # 1. Specialized Case: Area-Weighted Spatial Mean
     is_spatial = False
+    dims: List[str] = []
     if dim is not None:
         dims = [dim] if isinstance(dim, str) else dim
         if force_weighted:
@@ -128,4 +129,4 @@ def calculate_reduction(
     result = update_history(result, msg)
 
     logger.info("Successfully completed reduction.")
-    return result
+    return cast(Union[xr.DataArray, xr.Dataset], result)

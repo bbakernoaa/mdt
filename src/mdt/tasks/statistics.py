@@ -1,6 +1,6 @@
 import inspect
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, cast
 
 import pandas as pd
 import xarray as xr
@@ -72,7 +72,7 @@ def compute_statistics(
                 msg = f"Computed {metric_name} with params: {kwargs}"
                 result = update_history(result, msg)
 
-                results[metric_name] = result
+                results[metric_name] = cast(Union[xr.Dataset, xr.DataArray, pd.Series], result)
             except Exception as e:
                 logger.error("Failed to compute %s: %s", metric_name, e)
                 raise
@@ -195,8 +195,8 @@ def _execute_metric(
                 if axis_param:
                     call_kwargs[axis_param] = axis
                 if target_obs is not None:
-                    return func(target_obs, target_mod, weights=w, **call_kwargs)
-                return func(target_mod, weights=w, **call_kwargs)
+                    return cast(Union[xr.Dataset, xr.DataArray], func(target_obs, target_mod, weights=w, **call_kwargs))
+                return cast(Union[xr.Dataset, xr.DataArray], func(target_mod, weights=w, **call_kwargs))
 
             # MDT Architecture Rule: Rely solely on monet-stats for statistical computations.
             # Manual fallbacks have been removed to ensure scientific consistency
@@ -212,12 +212,10 @@ def _execute_metric(
             call_kwargs[axis_param] = axis
 
         if target_obs is not None:
-            return func(target_obs, target_mod, **call_kwargs)
-        return func(target_mod, **call_kwargs)
+            return cast(Union[xr.Dataset, xr.DataArray], func(target_obs, target_mod, **call_kwargs))
+        return cast(Union[xr.Dataset, xr.DataArray], func(target_mod, **call_kwargs))
 
-    elif isinstance(data, pd.DataFrame):
-        obs = data[obs_var]
-        mod = data[mod_var]
-        return func(obs, mod, **call_kwargs)
-
-    return func(data, **call_kwargs)
+    # data must be pd.DataFrame based on the Union type hint
+    obs = data[obs_var]
+    mod = data[mod_var]
+    return cast(pd.Series, func(obs, mod, **call_kwargs))

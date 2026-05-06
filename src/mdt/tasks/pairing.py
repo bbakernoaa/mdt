@@ -1,5 +1,5 @@
 import logging
-from typing import Union
+from typing import Any, Dict, Union, cast
 
 import pandas as pd
 import xarray as xr
@@ -17,7 +17,7 @@ def pair_data(
     method: str,
     source_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
     target_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
-    kwargs: dict,
+    kwargs: Dict[str, Any],
 ) -> Union[xr.Dataset, xr.DataArray, pd.DataFrame]:
     """
     Dynamically pair two datasets using monet.
@@ -66,7 +66,7 @@ def pair_data(
         paired_data = update_history(paired_data, msg)
 
         logger.info("Successfully paired data '%s'", name)
-        return paired_data
+        return cast(Union[xr.Dataset, xr.DataArray, pd.DataFrame], paired_data)
 
     except ImportError as e:
         logger.error("Required package for pairing not found: %s", e)
@@ -77,7 +77,7 @@ def pair_data(
 
 
 def combine_paired_data(
-    paired_data: dict,
+    paired_data: Dict[str, Union[pd.DataFrame, xr.Dataset, xr.DataArray]],
     dim: str = "model",
 ) -> Union[pd.DataFrame, xr.Dataset, xr.DataArray]:
     """
@@ -124,15 +124,15 @@ def combine_paired_data(
             dfs.append(df_copy)
 
         # Concatenate all dataframes
-        combined = pd.concat(dfs, ignore_index=True)
-        return combined
+        combined_df = pd.concat(dfs, ignore_index=True)
+        return combined_df
 
     elif isinstance(first_item, (xr.Dataset, xr.DataArray)):
         datasets = []
         names = []
         for name, ds in paired_data.items():
-            if not isinstance(ds, type(first_item)):
-                raise TypeError(f"All items must be of the same type. Found {type(ds)} and {type(first_item)}")
+            if not isinstance(ds, (xr.Dataset, xr.DataArray)):
+                raise TypeError(f"All items must be xarray. Found {type(ds)}")
 
             datasets.append(ds)
             names.append(name)
@@ -140,8 +140,8 @@ def combine_paired_data(
         # Combine using xarray concatenation along a new dimension
         try:
             # Create the dimension coordinate
-            combined = xr.concat(datasets, dim=pd.Index(names, name=dim))
-            return combined
+            combined_xr = xr.concat(datasets, dim=pd.Index(names, name=dim))  # type: ignore[arg-type]
+            return cast(Union[xr.Dataset, xr.DataArray], combined_xr)
         except Exception as e:
             logger.error(f"Failed to combine xarray objects: {e}")
             raise

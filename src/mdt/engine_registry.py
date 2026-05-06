@@ -1,16 +1,19 @@
 """Engine abstraction layer and registry for MDT orchestrator backends."""
 
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Type
 
 import networkx as nx
+
+if TYPE_CHECKING:
+    from mdt.config import ConfigParser
 
 
 class Engine(ABC):
     """Base contract for all MDT orchestrator engines."""
 
     @abstractmethod
-    def __init__(self, dag: nx.DiGraph, config):
+    def __init__(self, dag: nx.DiGraph, config: "ConfigParser"):
         """Initialize the engine with a DAG and configuration.
 
         Parameters
@@ -23,7 +26,7 @@ class Engine(ABC):
         ...
 
     @abstractmethod
-    def execute(self) -> dict:
+    def execute(self) -> dict[str, Any]:
         """Execute the workflow represented by the DAG.
 
         Returns
@@ -42,10 +45,10 @@ class EngineRegistry:
     with install instructions when the optional dependency is missing.
     """
 
-    _engines: dict[str, Callable[[], type[Engine]]] = {}
+    _engines: ClassVar[Dict[str, Callable[[], Type[Engine]]]] = {}
 
     @classmethod
-    def register(cls, name: str, factory: Callable[[], type[Engine]]):
+    def register(cls, name: str, factory: Callable[[], Type[Engine]]) -> None:
         """Register a lazy engine factory under *name*.
 
         Parameters
@@ -61,7 +64,7 @@ class EngineRegistry:
         cls._engines[name] = factory
 
     @classmethod
-    def get_engine(cls, name: str) -> type[Engine]:
+    def get_engine(cls, name: str) -> Type[Engine]:
         """Return the engine class for *name*, invoking the lazy factory.
 
         Parameters
@@ -88,22 +91,22 @@ class EngineRegistry:
         return cls._engines[name]()
 
 
-def _register_prefect():
+def _register_prefect() -> Type[Engine]:
     try:
         from mdt.engine import PrefectEngine
-    except ImportError:
-        raise ImportError("Prefect is not installed. Install with: pip install mdt[prefect]")
+    except ImportError as e:
+        raise ImportError("Prefect is not installed. Install with: pip install mdt[prefect]") from e
     return PrefectEngine
 
 
 EngineRegistry.register("prefect", _register_prefect)
 
 
-def _register_ecflow():
+def _register_ecflow() -> Type[Engine]:
     try:
         from mdt.ecflow_engine import EcFlowEngine
-    except ImportError:
-        raise ImportError("ecFlow is not installed. Install with: pip install mdt[ecflow]")
+    except ImportError as e:
+        raise ImportError("ecFlow is not installed. Install with: pip install mdt[ecflow]") from e
     return EcFlowEngine
 
 

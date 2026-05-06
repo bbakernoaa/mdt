@@ -18,7 +18,7 @@ from hypothesis import strategies as st
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def _tracking_ecflow(monkeypatch):
     """Fake ``ecflow`` module that records constructor arguments.
 
@@ -69,7 +69,7 @@ def _tracking_ecflow(monkeypatch):
     return created
 
 
-@pytest.fixture()
+@pytest.fixture
 def _make_config():
     """Factory that builds a mock config with a given execution dict."""
 
@@ -184,7 +184,7 @@ class TestEcFlowZarrStoreVariablesProperty:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def _fake_ecflow(monkeypatch):
     """Inject a fake ``ecflow`` module so tests run without the real package."""
     fake = types.ModuleType("ecflow")

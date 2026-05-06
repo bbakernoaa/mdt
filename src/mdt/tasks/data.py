@@ -1,6 +1,5 @@
-import importlib
 import logging
-from typing import Union
+from typing import Any, Dict, Union, cast
 
 import pandas as pd
 import xarray as xr
@@ -10,102 +9,93 @@ from mdt.utils import update_history
 logger = logging.getLogger(__name__)
 
 
-def load_data(name: str, dataset_type: str, kwargs: dict) -> Union[xr.Dataset, pd.DataFrame]:
+def load_data(
+    name: str,
+    dataset_type: str,
+    kwargs: Dict[str, Any],
+) -> Union[xr.Dataset, pd.DataFrame]:
     """
-    Dynamically loads data using monetio.
+    Unified entry point for loading data via monetio.load.
+
+    Supports standard loading and VirtualiZarr-based ingestion (kerchunk/icechunk).
+    If VirtualiZarr parameters cause a TypeError (e.g., old reader version),
+    it automatically falls back to standard loading.
 
     Parameters
     ----------
     name : str
-        The configuration identifier for this data.
+        A user-defined name for this dataset.
     dataset_type : str
-        The name of the monetio source (e.g., 'cmaq', 'aeronet', 'merra2').
+        The dataset type/reader name recognized by monetio (e.g., 'cmaq', 'aeronet').
     kwargs : dict
-        Additional keyword arguments to pass to the monetio reader.
-        When VirtualiZarr is enabled, kwargs may include:
-        - use_virtualizarr (bool): Enable VirtualiZarr-based loading.
-        - virtualizarr_backend (str): Backend format for virtual references.
-        - store_path (str): Path to the virtual Zarr store.
-        - icechunk_repo (str): Icechunk repository path (when backend is icechunk).
+        Keyword arguments passed to monetio.load.
 
     Returns
     -------
     xarray.Dataset or pandas.DataFrame
-        The loaded dataset object returned by monetio.
+        The loaded data object.
 
-    Examples
-    --------
-    >>> ds = load_data("my_merra2", "merra2", {"dates": "2023-01-01"})
+    Notes
+    -----
+    Aero Protocol: Ensures that data is loaded lazily where supported.
     """
-    logger.info(f"Loading data '{name}' using monetio.load('{dataset_type}')")
+    logger.info("Loading dataset '%s' of type '%s'", name, dataset_type)
 
-    # Extract VirtualiZarr-specific keys for logging and fallback
-    virtualizarr_keys = [
-        "use_virtualizarr",
-        "virtualizarr_backend",
-        "store_path",
-        "icechunk_repo",
-    ]
-    virtualizarr_params = {}
-    for key in virtualizarr_keys:
-        if key in kwargs:
-            virtualizarr_params[key] = kwargs[key]
+    import monetio
 
-    use_virtualizarr = virtualizarr_params.get("use_virtualizarr", False)
-
+    # 1. Attempt VirtualiZarr Loading if enabled
+    use_virtualizarr = kwargs.get("use_virtualizarr", False)
     if use_virtualizarr:
+        backend = kwargs.get("virtualizarr_backend", "kerchunk_json")
+        store_path = kwargs.get("store_path", f"./zarr_stores/{name}/")
+        icechunk_repo = kwargs.get("icechunk_repo", "")
+
         logger.info(
-            f"Loading '{name}' with VirtualiZarr: "
-            f"backend={virtualizarr_params.get('virtualizarr_backend')}, "
-            f"store_path={virtualizarr_params.get('store_path')}, "
-            f"icechunk_repo={virtualizarr_params.get('icechunk_repo', 'N/A')}"
+            "Attempting VirtualiZarr load for '%s' (backend=%s, store=%s, icechunk_repo=%s)",
+            name,
+            backend,
+            store_path,
+            icechunk_repo,
         )
 
+        try:
+            # Call monetio.load with all VirtualiZarr parameters
+            ds = monetio.load(dataset_type, **kwargs)
+            logger.info("Successfully loaded '%s' via VirtualiZarr pathway.", name)
+
+            # Add MDT provenance tracking
+            msg = f"Loaded dataset '{name}' via VirtualiZarr (backend={backend})."
+            ds = update_history(ds, msg)
+            return cast(Union[xr.Dataset, pd.DataFrame], ds)
+
+        except TypeError as e:
+            # Handle cases where reader doesn't support VirtualiZarr kwargs yet
+            logger.warning(
+                "VirtualiZarr load failed for '%s' due to unexpected arguments: %s. "
+                "Retrying with standard monetio.load.",
+                name,
+                e,
+            )
+            # Fallback path: strip the VirtualiZarr-specific keys
+            fallback_kwargs = {
+                k: v for k, v in kwargs.items() if k not in ["use_virtualizarr", "virtualizarr_backend", "store_path", "icechunk_repo"]
+            }
+            ds = monetio.load(dataset_type, **fallback_kwargs)
+            msg = f"Loaded dataset '{name}' (VirtualiZarr fallback used)."
+            ds = update_history(ds, msg)
+            return cast(Union[xr.Dataset, pd.DataFrame], ds)
+
+    # 2. Standard Loading Pathway
     try:
-        import monetio
-
-        # Use the universal load function if available
-        if hasattr(monetio, "load"):
-            try:
-                dataset = monetio.load(dataset_type, **kwargs)
-            except Exception as e:
-                if use_virtualizarr:
-                    logger.warning(f"VirtualiZarr load failed for '{name}': {e}. Retrying without VirtualiZarr parameters.")
-                    fallback_kwargs = {k: v for k, v in kwargs.items() if k not in virtualizarr_keys}
-                    dataset = monetio.load(dataset_type, **fallback_kwargs)
-                else:
-                    raise
-        else:
-            # Fallback for older versions
-            # Dynamically import the specific monetio reader
-            module_path = f"monetio.datasets.{dataset_type}"
-            try:
-                reader_module = importlib.import_module(module_path)
-            except ImportError:
-                module_path = f"monetio.readers.{dataset_type}"
-                reader_module = importlib.import_module(module_path)
-
-            if hasattr(reader_module, "open_dataset"):
-                func = reader_module.open_dataset
-            elif hasattr(reader_module, "open"):
-                func = reader_module.open
-            elif hasattr(reader_module, "open_mfdataset"):
-                func = reader_module.open_mfdataset
-            else:
-                raise AttributeError(f"Could not find a standard open function in {module_path}")
-
-            dataset = func(**kwargs)
-
-        if use_virtualizarr:
-            logger.info(f"Successfully loaded '{name}' with VirtualiZarr enabled.")
+        ds = monetio.load(dataset_type, **kwargs)
 
         # Provenance Tracking
-        msg = f"Loaded dataset '{name}' of type '{dataset_type}' with params {kwargs}."
-        dataset = update_history(dataset, msg)
+        msg = f"Loaded dataset '{name}' using type '{dataset_type}' with params {kwargs}."
+        ds = update_history(ds, msg)
 
-        logger.info(f"Successfully loaded data '{name}'")
-        return dataset
+        logger.info("Successfully loaded dataset '%s'", name)
+        return cast(Union[xr.Dataset, pd.DataFrame], ds)
 
     except Exception as e:
-        logger.error(f"Failed to load data '{name}': {e}")
+        logger.error("Failed to load dataset '%s': %s", name, e)
         raise

@@ -2,6 +2,7 @@
 
 import logging
 import pathlib
+from typing import Any, Dict, Union, cast
 
 import yaml
 
@@ -20,23 +21,23 @@ class ConfigParser:
         The path to the YAML configuration file.
     """
 
-    def __init__(self, config_path):
+    def __init__(self, config_path: Union[str, pathlib.Path]):
         self.config_path = pathlib.Path(config_path)
-        self.config = self._load_yaml()
+        self.config: Dict[str, Any] = self._load_yaml()
         self._validate_config()
 
-    def _load_yaml(self):
+    def _load_yaml(self) -> Dict[str, Any]:
         if not self.config_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
 
-        with open(self.config_path, "r") as f:
+        with self.config_path.open() as f:
             try:
                 config = yaml.safe_load(f)
-                return config if config is not None else {}
+                return cast(Dict[str, Any], config) if config is not None else {}
             except yaml.YAMLError as e:
-                raise ValueError(f"Error parsing YAML configuration: {e}")
+                raise ValueError(f"Error parsing YAML configuration: {e}") from e
 
-    def _validate_config(self):
+    def _validate_config(self) -> None:
         """Basic validation to ensure required top-level keys exist."""
         required_keys = ["data"]
         for key in required_keys:
@@ -94,37 +95,37 @@ class ConfigParser:
                     raise ValueError(f"Plot task '{name}' must specify an 'input'.")
 
     @property
-    def data(self):
+    def data(self) -> Dict[str, Any]:
         """dict: The 'data' section of the configuration."""
-        return self.config.get("data", {})
+        return cast(Dict[str, Any], self.config.get("data", {}))
 
     @property
-    def pairing(self):
+    def pairing(self) -> Dict[str, Any]:
         """dict: The 'pairing' section of the configuration."""
-        return self.config.get("pairing", {})
+        return cast(Dict[str, Any], self.config.get("pairing", {}))
 
     @property
-    def combine(self):
+    def combine(self) -> Dict[str, Any]:
         """dict: The 'combine' section of the configuration."""
-        return self.config.get("combine", {})
+        return cast(Dict[str, Any], self.config.get("combine", {}))
 
     @property
-    def statistics(self):
+    def statistics(self) -> Dict[str, Any]:
         """dict: The 'statistics' section of the configuration."""
-        return self.config.get("statistics", {})
+        return cast(Dict[str, Any], self.config.get("statistics", {}))
 
     @property
-    def plots(self):
+    def plots(self) -> Dict[str, Any]:
         """dict: The 'plots' section of the configuration."""
-        return self.config.get("plots", {})
+        return cast(Dict[str, Any], self.config.get("plots", {}))
 
     @property
-    def orchestrator(self):
+    def orchestrator(self) -> str:
         """str: The orchestrator backend name from the execution section, defaults to 'prefect'."""
-        return self.execution.get("orchestrator", "prefect")
+        return str(self.execution.get("orchestrator", "prefect"))
 
     @property
-    def execution(self):
+    def execution(self) -> Dict[str, Any]:
         """
         Retrieves the execution configuration, which can define multiple clusters.
 
@@ -148,7 +149,7 @@ class ConfigParser:
             The execution configuration section, including any
             orchestrator-specific keys defined in the YAML.
         """
-        exec_cfg = self.config.get("execution", {})
+        exec_cfg: Dict[str, Any] = self.config.get("execution", {})
         if not exec_cfg:
             return {"default_cluster": "compute", "clusters": {"compute": {"mode": "local"}}}
 
@@ -164,7 +165,7 @@ class ConfigParser:
 
         # Ensure default_cluster is set if clusters are defined
         if "clusters" in exec_cfg and "default_cluster" not in exec_cfg:
-            exec_cfg["default_cluster"] = list(exec_cfg["clusters"].keys())[0]
+            exec_cfg["default_cluster"] = next(iter(exec_cfg["clusters"].keys()))
 
         # Ensure a service cluster is always defined for service-node tasks (like data download)
         if "service" not in exec_cfg.get("clusters", {}):
@@ -183,7 +184,7 @@ class ConfigParser:
 
         return exec_cfg
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: Any = None) -> Any:
         """
         Retrieves a specific key from the raw configuration.
 
@@ -202,7 +203,7 @@ class ConfigParser:
         return self.config.get(key, default)
 
 
-def load_config(config_path):
+def load_config(config_path: Union[str, pathlib.Path]) -> ConfigParser:
     """
     Helper function to quickly initialize a ConfigParser from a path.
 

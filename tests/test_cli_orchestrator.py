@@ -9,13 +9,13 @@ import networkx as nx
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_dag():
     """Return a trivial DAG for CLI tests."""
     return nx.DiGraph()
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_config_factory():
     """Factory that builds a mock ConfigParser with a configurable orchestrator."""
 
@@ -27,7 +27,7 @@ def mock_config_factory():
     return _make
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_engine_class():
     """Return a mock engine class whose instances have an .execute() method."""
     engine_cls = MagicMock()

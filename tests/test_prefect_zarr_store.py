@@ -29,6 +29,25 @@ from mdt.engine import PrefectEngine  # noqa: E402
 class TestPrefectVirtualiZarrIntegration:
     """Test suite for VirtualiZarr integration in PrefectEngine."""
 
+    def mock_task_decorator(self, *args, **kwargs):
+        def wrapper(f):
+            m = MagicMock(name=f"Task({kwargs.get('name', 'unknown')})")
+            m.with_options.return_value = m
+            m._original_func = f
+            return m
+
+        return wrapper
+
+    def mock_flow_decorator(self, *args, **kwargs):
+        def wrapper(f):
+            def flow_runner(*a, **k):
+                return f(*a, **k)
+
+            flow_runner.with_options = MagicMock(return_value=flow_runner)
+            return flow_runner
+
+        return wrapper
+
     @pytest.fixture(autouse=True)
     def setup_mocks(self, mocker):
         """Setup Prefect and Dask mocks for engine tests."""
@@ -37,27 +56,8 @@ class TestPrefectVirtualiZarrIntegration:
         prefect_mock.flow.reset_mock()
         prefect_mock.get_run_logger.reset_mock()
 
-        def mock_task_decorator(*args, **kwargs):
-            def wrapper(f):
-                m = MagicMock(name=f"Task({kwargs.get('name', 'unknown')})")
-                m.with_options.return_value = m
-                m._original_func = f
-                return m
-
-            return wrapper
-
-        def mock_flow_decorator(*args, **kwargs):
-            def wrapper(f):
-                def flow_runner(*a, **k):
-                    return f(*a, **k)
-
-                flow_runner.with_options = MagicMock(return_value=flow_runner)
-                return flow_runner
-
-            return wrapper
-
-        prefect_mock.task.side_effect = mock_task_decorator
-        prefect_mock.flow.side_effect = mock_flow_decorator
+        prefect_mock.task.side_effect = self.mock_task_decorator
+        prefect_mock.flow.side_effect = self.mock_flow_decorator
 
         # Mock dask/distributed to avoid real cluster creation
         # We explicitly mock the distributed module in sys.modules to avoid AttributeError
@@ -94,28 +94,23 @@ class TestPrefectVirtualiZarrIntegration:
         config = MagicMock()
         config.execution = {"clusters": {"service": {"mode": "local"}}}
 
-        engine = PrefectEngine(dag, config)
+        # In the new code, task decorators are applied inside execute()
+        # We need to capture the task object when it's created
 
-        created_tasks = {}
-        original_task_effect = prefect_mock.task.side_effect
+        load_task_mock = MagicMock(name="LoadDataTask")
+        load_task_mock.with_options.return_value = load_task_mock
 
-        def capture_task(*args, **kwargs):
-            task_name = kwargs.get("name")
-            real_decorator = original_task_effect(*args, **kwargs)
+        def side_effect(*args, **kwargs):
+            if kwargs.get("name") == "Load Data":
+                return lambda f: load_task_mock
+            return self.mock_task_decorator(*args, **kwargs)
 
-            def wrapper(f):
-                t = real_decorator(f)
-                created_tasks[task_name] = t
-                return t
-
-            return wrapper
-
-        with patch.object(prefect_mock, "task", side_effect=capture_task):
+        with patch.object(prefect_mock, "task", side_effect=side_effect):
+            engine = PrefectEngine(dag, config)
             engine.execute()
 
-        load_task = created_tasks["Load Data"]
-        assert load_task.with_options.call_count == 2
-        calls = load_task.with_options.call_args_list
+        assert load_task_mock.with_options.call_count == 2
+        calls = load_task_mock.with_options.call_args_list
 
         vz_call = next((c for c in calls if c.kwargs.get("tags") == ["virtualizarr"]), None)
         assert vz_call is not None
@@ -127,41 +122,28 @@ class TestPrefectVirtualiZarrIntegration:
 
     def test_prefect_load_data_logging(self, mocker):
         """Verify that the prefect_load_data task logs VirtualiZarr info when enabled."""
-        dag = nx.DiGraph()
-        config = MagicMock()
-        config.execution = {"clusters": {"service": {"mode": "local"}}}
-        engine = PrefectEngine(dag, config)
-
-        captured_func = None
-
-        def capture_func(*args, **kwargs):
-            def wrapper(f):
-                nonlocal captured_func
-                if kwargs.get("name") == "Load Data":
-                    captured_func = f
-                return MagicMock()
-
-            return wrapper
-
-        with patch.object(prefect_mock, "task", side_effect=capture_func):
-            try:
-                engine.execute()
-            except Exception:
-                pass
-
-        assert captured_func is not None
+        import mdt.engine
 
         mock_logger = MagicMock()
+        # In the new structure, get_run_logger is imported inside the functions
+        # We need to mock it in prefect_mock
         prefect_mock.get_run_logger.return_value = mock_logger
-        mocker.patch("mdt.engine.load_data")
 
         vz_kwargs = {
             "use_virtualizarr": True,
             "virtualizarr_backend": "icechunk",
             "store_path": "/tmp/vz",
             "icechunk_repo": "s3://repo",
+            "files": ["fake.nc"],
         }
-        captured_func(name="my_vz", dataset_type="merra2", kwargs=vz_kwargs)
+        # prefect_load_data is a function defined at module level
+        # We MUST mock monetio because calling it triggers environment-dependent imports/validation
+        mock_monetio = MagicMock()
+        mock_monetio.load.return_value = MagicMock()
+
+        with patch.dict("sys.modules", {"monetio": mock_monetio}):
+            mdt.engine.prefect_load_data(name="my_vz", dataset_type="merra2", kwargs=vz_kwargs)
+            assert mock_monetio.load.called
 
         log_messages = [call.args[0] for call in mock_logger.info.call_args_list]
         assert any("VirtualiZarr" in msg for msg in log_messages)
@@ -170,7 +152,11 @@ class TestPrefectVirtualiZarrIntegration:
         assert any("icechunk_repo: s3://repo" in msg for msg in log_messages)
 
         mock_logger.info.reset_mock()
-        captured_func(name="my_std", dataset_type="cmaq", kwargs={})
+        mock_monetio.load.reset_mock()
+        with patch.dict("sys.modules", {"monetio": mock_monetio}):
+            mdt.engine.prefect_load_data(name="my_std", dataset_type="cmaq", kwargs={"files": ["fake.nc"]})
+            assert mock_monetio.load.called
+
         log_messages = [call.args[0] for call in mock_logger.info.call_args_list]
         assert any("Loading data: my_std of type cmaq" in msg for msg in log_messages)
         assert not any("VirtualiZarr" in msg for msg in log_messages)

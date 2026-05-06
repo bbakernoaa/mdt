@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, cast
 
 import pandas as pd
 import xarray as xr
@@ -93,7 +93,12 @@ def _find_plot_class(plot_type: str) -> Any:
     raise ValueError(f"Could not find a plot class in monet_plots for type: '{plot_type}'")
 
 
-def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
+def _generate_static_plot(
+    name: str,
+    plot_type: str,
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]],
+    kwargs: Dict[str, Any],
+) -> Any:
     """Track A: Static plotting with monet-plots (Matplotlib + Cartopy)."""
     savename = kwargs.pop("savename", f"{name}.png")
 
@@ -104,7 +109,8 @@ def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
         # We try to provide the expected format by default but allow the plot class to handle it.
         # Based on monet-plots API, we use .to_dataframe() if it looks like a tabular plot.
         if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
-            data = input_data.to_dataframe()
+            # Use cast to Any to avoid "Series[Any]" not callable error
+            data = cast(Any, input_data).to_dataframe()
         else:
             data = input_data
 
@@ -123,16 +129,22 @@ def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
         return plot_obj
 
     except ValueError as e:
-        raise NotImplementedError(f"Static plot type '{plot_type}' not supported: {e}")
+        raise NotImplementedError(f"Static plot type '{plot_type}' not supported: {e}") from e
 
 
-def _generate_interactive_plot(name, plot_type, input_data, kwargs) -> Any:
+def _generate_interactive_plot(
+    name: str,
+    plot_type: str,
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]],
+    kwargs: Dict[str, Any],
+) -> Any:
     """Track B: Interactive plotting with monet-plots (HvPlot/GeoViews)."""
     try:
         plot_class = _find_plot_class(plot_type)
 
         if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
-            data = input_data.to_dataframe()
+            # Use cast to Any to avoid "Series[Any]" not callable error
+            data = cast(Any, input_data).to_dataframe()
         else:
             data = input_data
 
@@ -145,4 +157,4 @@ def _generate_interactive_plot(name, plot_type, input_data, kwargs) -> Any:
         return plot_obj.hvplot(**kwargs)
 
     except (ValueError, AttributeError) as e:
-        raise NotImplementedError(f"Interactive plot type '{plot_type}' not supported: {e}")
+        raise NotImplementedError(f"Interactive plot type '{plot_type}' not supported: {e}") from e
