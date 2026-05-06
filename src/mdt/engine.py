@@ -1,6 +1,8 @@
 """Prefect execution engine and task wrappers for MDT."""
 
 import logging
+import subprocess
+from typing import TYPE_CHECKING, Any, Dict, List
 
 import networkx as nx
 
@@ -11,19 +13,22 @@ from mdt.tasks.pairing import combine_paired_data, pair_data
 from mdt.tasks.plotting import generate_plot
 from mdt.tasks.statistics import compute_statistics
 
+if TYPE_CHECKING:
+    from mdt.config import ConfigParser
+
 logger = logging.getLogger(__name__)
 
 
 class PrefectEngine(Engine):
     """Executes a NetworkX DAG as a Prefect Flow."""
 
-    def __init__(self, dag, config):
+    def __init__(self, dag: nx.DiGraph, config: "ConfigParser"):
         self.dag = dag
         self.config = config
-        self.client = None
-        self.clusters = {}
+        self.client: Any = None
+        self.clusters: Dict[str, Any] = {}
 
-    def _setup_dask_clusters(self):
+    def _setup_dask_clusters(self) -> Any:
         """
         Initializes Dask clusters based on the execution configuration.
 
@@ -34,15 +39,13 @@ class PrefectEngine(Engine):
         exec_cfg = self.config.execution
         clusters_cfg = exec_cfg.get("clusters", {})
 
-        import subprocess
-
         # If there's only one cluster and it's local, keep it simple
         import dask.distributed
 
-        if len(clusters_cfg) == 1 and list(clusters_cfg.values())[0].get("mode", "local") == "local":
+        if len(clusters_cfg) == 1 and next(iter(clusters_cfg.values())).get("mode", "local") == "local":
             logger.info("Setting up a single local Dask cluster.")
-            cluster_name = list(clusters_cfg.keys())[0]
-            workers = list(clusters_cfg.values())[0].get("workers", 1)
+            cluster_name = next(iter(clusters_cfg.keys()))
+            workers = next(iter(clusters_cfg.values())).get("workers", 1)
             # Assign the requested numeric resource to the local workers to prevent hanging
             return dask.distributed.LocalCluster(n_workers=workers, resources={cluster_name.upper(): 1})
 
@@ -51,7 +54,7 @@ class PrefectEngine(Engine):
         logger.info("Setting up central Dask Scheduler.")
         primary_cluster = dask.distributed.LocalCluster(
             n_workers=0,  # The local cluster is just the scheduler
-            host="0.0.0.0",  # Allow external connections
+            host="0.0.0.0",  # noqa: S104 — Allow external connections
         )
         scheduler_address = primary_cluster.scheduler_address
         self.client = dask.distributed.Client(primary_cluster)
@@ -93,13 +96,13 @@ class PrefectEngine(Engine):
                 hpc_cluster = HPCProfileFactory.create_cluster(mode, **kwargs)
 
                 # Retrieve the underlying job script formatted for the specific batch system
-                job_script = hpc_cluster.job_script()
+                hpc_job_script = hpc_cluster.job_script()
 
                 # Dask job scripts contain a variable representing the scheduler it connects to.
                 # E.g., `dask-worker tcp://127.0.0.1:8786 ...`
                 # We replace this dummy scheduler address with our central primary scheduler address.
                 dummy_address = hpc_cluster.scheduler_address
-                job_script = job_script.replace(dummy_address, scheduler_address)
+                hpc_job_script = hpc_job_script.replace(dummy_address, scheduler_address)
 
                 # Determine the submission command based on the mode (slurm -> sbatch, pbs -> qsub)
                 submit_cmd = "sbatch" if "slurm" in mode or mode in ["hera", "jet", "orion", "hercules", "gaea", "ursa"] else "qsub"
@@ -110,7 +113,7 @@ class PrefectEngine(Engine):
                 logger.info(f"Submitting {workers} {submit_cmd} jobs to '{cluster_name}' queue.")
                 for _ in range(workers):
                     try:
-                        subprocess.run([submit_cmd], input=job_script.encode("utf-8"), check=True)
+                        subprocess.run([submit_cmd], input=hpc_job_script.encode("utf-8"), check=True)  # noqa: S603
                     except subprocess.CalledProcessError as e:
                         logger.error(f"Failed to submit HPC worker job for cluster {cluster_name}: {e}")
                         raise
@@ -119,7 +122,7 @@ class PrefectEngine(Engine):
 
         return primary_cluster
 
-    def execute(self):
+    def execute(self) -> Dict[str, Any]:
         """
         Builds the Dask cluster topology and executes the Prefect flow.
 
@@ -135,8 +138,8 @@ class PrefectEngine(Engine):
         # Prefect Task Wrappers — defined here so the @task decorator is only
         # evaluated when Prefect is actually installed and execute() is called.
 
-        @task(name="Load Data")
-        def prefect_load_data(name, dataset_type, kwargs):
+        @task(name="Load Data")  # type: ignore[untyped-decorator]
+        def prefect_load_data(name: str, dataset_type: str, kwargs: Dict[str, Any]) -> Any:
             logger = get_run_logger()
             use_virtualizarr = kwargs.get("use_virtualizarr", False)
             if use_virtualizarr:
@@ -151,26 +154,26 @@ class PrefectEngine(Engine):
                 logger.info(f"Loading data: {name} of type {dataset_type}")
             return load_data(name, dataset_type, kwargs)
 
-        @task(name="Pair Data")
-        def prefect_pair_data(name, method, source_data, target_data, kwargs):
+        @task(name="Pair Data")  # type: ignore[untyped-decorator]
+        def prefect_pair_data(name: str, method: str, source_data: Any, target_data: Any, kwargs: Dict[str, Any]) -> Any:
             logger = get_run_logger()
             logger.info(f"Pairing data: {name} using {method}")
             return pair_data(name, method, source_data, target_data, kwargs)
 
-        @task(name="Combine Paired Data")
-        def prefect_combine_paired_data(paired_data, dim="model"):
+        @task(name="Combine Paired Data")  # type: ignore[untyped-decorator]
+        def prefect_combine_paired_data(paired_data: Dict[str, Any], dim: str = "model") -> Any:
             logger = get_run_logger()
             logger.info(f"Combining {len(paired_data)} paired datasets along '{dim}'")
             return combine_paired_data(paired_data, dim=dim)
 
-        @task(name="Compute Statistics")
-        def prefect_compute_statistics(name, metrics, input_data, kwargs):
+        @task(name="Compute Statistics")  # type: ignore[untyped-decorator]
+        def prefect_compute_statistics(name: str, metrics: List[str], input_data: Any, kwargs: Dict[str, Any]) -> Any:
             logger = get_run_logger()
             logger.info(f"Computing statistics: {name} for metrics {metrics}")
             return compute_statistics(name, metrics, input_data, kwargs)
 
-        @task(name="Generate Plot")
-        def prefect_generate_plot(name, plot_type, input_data, kwargs):
+        @task(name="Generate Plot")  # type: ignore[untyped-decorator]
+        def prefect_generate_plot(name: str, plot_type: str, input_data: Any, kwargs: Dict[str, Any]) -> Any:
             logger = get_run_logger()
             logger.info(f"Generating plot: {name} of type {plot_type}")
             return generate_plot(name, plot_type, input_data, kwargs)
@@ -178,13 +181,13 @@ class PrefectEngine(Engine):
         import dask
 
         # Define the Prefect flow inline to capture the instance variables
-        @flow(name="MDT Verification Workflow")
-        def mdt_flow():
+        @flow(name="MDT Verification Workflow")  # type: ignore[untyped-decorator]
+        def mdt_flow() -> Dict[str, Any]:
             logger = get_run_logger()
             logger.info("Starting MDT Workflow...")
 
             # Dictionary to store the output futures of each task
-            task_outputs = {}
+            task_outputs: Dict[str, Any] = {}
 
             # Use topological sort to process nodes in the correct dependency order
             for node_id in nx.topological_sort(self.dag):
@@ -215,7 +218,7 @@ class PrefectEngine(Engine):
                         kwargs = node_data["kwargs"]
                         use_virtualizarr = kwargs.get("use_virtualizarr", False)
 
-                        task_options = {}
+                        task_options: Dict[str, Any] = {}
                         if use_virtualizarr:
                             task_options["tags"] = ["virtualizarr"]
                             task_options["task_run_name"] = f"Load Data: {name} [VirtualiZarr]"
@@ -299,6 +302,6 @@ class PrefectEngine(Engine):
         cluster = self._setup_dask_clusters()
 
         # Execute the Prefect flow, explicitly overriding the task_runner with our central cluster
-        results = mdt_flow.with_options(task_runner=DaskTaskRunner(address=cluster.scheduler_address))()
+        results: Dict[str, Any] = mdt_flow.with_options(task_runner=DaskTaskRunner(address=cluster.scheduler_address))()
 
         return results

@@ -93,7 +93,12 @@ def _find_plot_class(plot_type: str) -> Any:
     raise ValueError(f"Could not find a plot class in monet_plots for type: '{plot_type}'")
 
 
-def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
+def _generate_static_plot(
+    name: str,
+    plot_type: str,
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]],
+    kwargs: Dict[str, Any],
+) -> Any:
     """Track A: Static plotting with monet-plots (Matplotlib + Cartopy)."""
     savename = kwargs.pop("savename", f"{name}.png")
 
@@ -123,10 +128,15 @@ def _generate_static_plot(name, plot_type, input_data, kwargs) -> Any:
         return plot_obj
 
     except ValueError as e:
-        raise NotImplementedError(f"Static plot type '{plot_type}' not supported: {e}")
+        raise NotImplementedError(f"Static plot type '{plot_type}' not supported: {e}") from e
 
 
-def _generate_interactive_plot(name, plot_type, input_data, kwargs) -> Any:
+def _generate_interactive_plot(
+    name: str,
+    plot_type: str,
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]],
+    kwargs: Dict[str, Any],
+) -> Any:
     """Track B: Interactive plotting with monet-plots (HvPlot/GeoViews)."""
     try:
         plot_class = _find_plot_class(plot_type)
@@ -145,4 +155,4 @@ def _generate_interactive_plot(name, plot_type, input_data, kwargs) -> Any:
         return plot_obj.hvplot(**kwargs)
 
     except (ValueError, AttributeError) as e:
-        raise NotImplementedError(f"Interactive plot type '{plot_type}' not supported: {e}")
+        raise NotImplementedError(f"Interactive plot type '{plot_type}' not supported: {e}") from e

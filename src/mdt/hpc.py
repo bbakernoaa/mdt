@@ -1,6 +1,7 @@
 """NOAA RDHPCS Profile factory for Dask jobqueue integration."""
 
 import logging
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class HPCProfileFactory:
     """
 
     @classmethod
-    def create_cluster(cls, mode, **user_kwargs):
+    def create_cluster(cls, mode: str, **user_kwargs: Any) -> Any:
         """
         Creates and returns a dynamically configured dask-jobqueue Cluster instance.
 
@@ -71,7 +72,7 @@ class HPCProfileFactory:
             raise ValueError(f"Unknown execution mode or HPC profile: '{mode}'")
 
     @classmethod
-    def _create_hera(cls, user_kwargs):
+    def _create_hera(cls, user_kwargs: Dict[str, Any]) -> Any:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Hera defaults.")
@@ -96,7 +97,7 @@ class HPCProfileFactory:
         return SLURMCluster(**defaults)
 
     @classmethod
-    def _create_jet(cls, user_kwargs):
+    def _create_jet(cls, user_kwargs: Dict[str, Any]) -> Any:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Jet defaults.")
@@ -118,7 +119,7 @@ class HPCProfileFactory:
         return SLURMCluster(**defaults)
 
     @classmethod
-    def _create_orion(cls, user_kwargs):
+    def _create_orion(cls, user_kwargs: Dict[str, Any]) -> Any:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Orion defaults.")
@@ -140,11 +141,11 @@ class HPCProfileFactory:
         return SLURMCluster(**defaults)
 
     @classmethod
-    def _create_hercules(cls, user_kwargs):
+    def _create_hercules(cls, user_kwargs: Dict[str, Any]) -> Any:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Hercules defaults.")
-        defaults = {
+        defaults: Dict[str, Any] = {
             "cores": 80,
             "memory": "250GB",
             "processes": 1,
@@ -155,7 +156,7 @@ class HPCProfileFactory:
         if user_kwargs.get("queue") == "service" or user_kwargs.get("partition") == "service" or user_kwargs.get("cluster_name") == "service":
             defaults["job_extra_directives"] = ["--partition=u1-service"]
             # Ursa service nodes may have core/memory constraints, adjust defaults
-            defaults["cores"] = min(defaults["cores"], 32)
+            defaults["cores"] = min(int(defaults["cores"]), 32)
             defaults["memory"] = "120GB"
 
         # Remove custom internal arguments before passing to Dask
@@ -165,7 +166,7 @@ class HPCProfileFactory:
         return SLURMCluster(**defaults)
 
     @classmethod
-    def _create_gaea(cls, user_kwargs):
+    def _create_gaea(cls, user_kwargs: Dict[str, Any]) -> Any:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Gaea defaults.")
@@ -187,7 +188,7 @@ class HPCProfileFactory:
         return SLURMCluster(**defaults)
 
     @classmethod
-    def _create_ursa(cls, user_kwargs):
+    def _create_ursa(cls, user_kwargs: Dict[str, Any]) -> Any:
         from dask_jobqueue import SLURMCluster
 
         logger.info("Initializing SLURM cluster with RDHPCS Ursa defaults.")
@@ -209,7 +210,7 @@ class HPCProfileFactory:
         return SLURMCluster(**defaults)
 
     @classmethod
-    def _create_wcoss2(cls, user_kwargs):
+    def _create_wcoss2(cls, user_kwargs: Dict[str, Any]) -> Any:
         from dask_jobqueue import PBSCluster
 
         # WCOSS2 typically uses PBS Pro

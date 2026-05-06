@@ -9,11 +9,15 @@ loaded without ecFlow installed.
 
 import json
 import logging
-import os
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List
 
 import networkx as nx
 
 from mdt.engine_registry import Engine
+
+if TYPE_CHECKING:
+    from mdt.config import ConfigParser
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +71,14 @@ _DISPATCH_BLOCKS: dict[str, str] = {
 }
 
 
-def _build_wrapper_script(node_id: str) -> str:
+def _build_wrapper_script(node_id: str) -> str:  # noqa: ARG001
     """Return the full text of an ``.ecf`` wrapper script for *node_id*.
 
     The script uses ecFlow ``%VAR%`` substitution tokens that the ecFlow
     server replaces at runtime with the variable values set on the task
     node.
     """
+    # node_id is used by the caller to name the script file; not needed in the script body.
     lines = [
         "#!/usr/bin/env python3",
         '"""Auto-generated ecFlow wrapper for task %TASK_NAME%."""',
@@ -134,11 +139,11 @@ class EcFlowEngine(Engine):
         If the ``ecflow`` package is not installed.
     """
 
-    def __init__(self, dag: nx.DiGraph, config):
+    def __init__(self, dag: nx.DiGraph, config: "ConfigParser"):
         try:
             import ecflow  # lazy import — keep ecflow optional
-        except ImportError:
-            raise ImportError("ecFlow is not installed. Install with: pip install mdt[ecflow]")
+        except ImportError as e:
+            raise ImportError("ecFlow is not installed. Install with: pip install mdt[ecflow]") from e
 
         self.dag = dag
         self.config = config
@@ -154,7 +159,7 @@ class EcFlowEngine(Engine):
     # Engine ABC
     # ------------------------------------------------------------------
 
-    def execute(self) -> dict:
+    def execute(self) -> Dict[str, Any]:
         """Build the suite, generate wrappers, and start the suite.
 
         Returns
@@ -166,10 +171,10 @@ class EcFlowEngine(Engine):
         self.generate_task_wrappers()
 
         # Save the suite definition to a file for user inspection
-        os.makedirs(self.task_script_dir, exist_ok=True)
-        def_path = os.path.join(self.task_script_dir, f"{self.suite_name}.def")
+        Path(self.task_script_dir).mkdir(parents=True, exist_ok=True)
+        def_path = Path(self.task_script_dir) / f"{self.suite_name}.def"
         logger.info(f"Saving ecFlow suite definition to {def_path}")
-        defs.save_as_defs(def_path)
+        defs.save_as_defs(str(def_path))
 
         self._load_and_start(defs)
         return {"suite": self.suite_name, "status": "started"}
@@ -178,7 +183,7 @@ class EcFlowEngine(Engine):
     # Stubs — implemented in later tasks
     # ------------------------------------------------------------------
 
-    def build_suite(self):
+    def build_suite(self) -> Any:
         """Translate the DAG into an ``ecflow.Defs`` suite definition.
 
         Creates one ecFlow family per task type and one ecFlow task node
@@ -197,7 +202,7 @@ class EcFlowEngine(Engine):
         suite = ecflow.Suite(self.suite_name)
 
         # Create one family per task type.
-        families: dict[str, object] = {}
+        families: dict[str, Any] = {}
         for family_name in _FAMILY_MAP.values():
             family = ecflow.Family(family_name)
             families[family_name] = family
@@ -205,7 +210,7 @@ class EcFlowEngine(Engine):
 
         # Build lookups for trigger generation.
         node_family: dict[str, str] = {}
-        node_tasks: dict[str, object] = {}
+        node_tasks: dict[str, Any] = {}
 
         for node_id, data in self.dag.nodes(data=True):
             task_type = data["task_type"]
@@ -258,7 +263,7 @@ class EcFlowEngine(Engine):
         defs.add_suite(suite)
         return defs
 
-    def generate_task_wrappers(self) -> list[str]:
+    def generate_task_wrappers(self) -> List[str]:
         """Generate one ``.ecf`` wrapper script per DAG node.
 
         Each script is a self-contained Python program that:
@@ -275,18 +280,18 @@ class EcFlowEngine(Engine):
         list[str]
             Paths of the generated ``.ecf`` files.
         """
-        os.makedirs(self.task_script_dir, exist_ok=True)
+        Path(self.task_script_dir).mkdir(parents=True, exist_ok=True)
 
-        generated: list[str] = []
+        generated: List[str] = []
         for node_id in self.dag.nodes:
-            script_path = os.path.join(self.task_script_dir, f"{node_id}.ecf")
-            with open(script_path, "w") as fh:
+            script_path = Path(self.task_script_dir) / f"{node_id}.ecf"
+            with script_path.open("w") as fh:
                 fh.write(_build_wrapper_script(node_id))
-            generated.append(script_path)
+            generated.append(str(script_path))
 
         return generated
 
-    def _load_and_start(self, defs) -> None:
+    def _load_and_start(self, defs: Any) -> None:
         """Load the suite definition into the ecFlow server and begin it.
 
         Parameters

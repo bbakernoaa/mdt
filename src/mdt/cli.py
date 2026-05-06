@@ -3,6 +3,7 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 import yaml
 
@@ -12,13 +13,13 @@ from mdt.dag import DAGBuilder
 from mdt.engine_registry import EngineRegistry
 
 
-def setup_logging(debug=False):
+def setup_logging(debug: bool = False) -> None:
     """Configures the standard logging format for MDT."""
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
-def main():
+def main() -> None:
     """
     Entry point for the MDT CLI application.
 
@@ -112,7 +113,7 @@ def main():
             "execution": {"default_cluster": "local", "clusters": {"local": {"mode": "local", "workers": 2}}},
         }
         try:
-            with open(args.output, "w") as f:
+            with Path(args.output).open("w") as f:
                 yaml.dump(template, f, sort_keys=False)
             print(f"Generated template configuration: {args.output}")
         except Exception as e:

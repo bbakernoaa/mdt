@@ -1,6 +1,10 @@
 import logging
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
+
+if TYPE_CHECKING:
+    from mdt.config import ConfigParser
 
 logger = logging.getLogger(__name__)
 
@@ -8,11 +12,11 @@ logger = logging.getLogger(__name__)
 class DAGBuilder:
     """Builds a NetworkX Directed Acyclic Graph based on MDT configuration."""
 
-    def __init__(self, config):
+    def __init__(self, config: "ConfigParser"):
         self.config = config
         self.graph = nx.DiGraph()
 
-    def build(self):
+    def build(self) -> nx.DiGraph:
         """
         Constructs and validates the dependency graph.
 
@@ -41,7 +45,7 @@ class DAGBuilder:
         logger.info(f"Built task graph with {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges.")
         return self.graph
 
-    def _add_data_nodes(self):
+    def _add_data_nodes(self) -> None:
         """Adds nodes for loading data (from monetio)."""
         data_cfg = self.config.data
         if not data_cfg:
@@ -61,7 +65,7 @@ class DAGBuilder:
                 logger.warning(f"Data source '{name}' is missing 'type'. Skipping.")
                 continue
 
-            kwargs = details.get("kwargs") or {}
+            kwargs: dict[str, Any] = details.get("kwargs") or {}
             if "use_kerchunk" in details:
                 kwargs["use_kerchunk"] = details.get("use_kerchunk")
             if "kerchunk_file" in details:
@@ -84,7 +88,7 @@ class DAGBuilder:
                 kwargs=kwargs,
             )
 
-    def _add_pairing_nodes(self):
+    def _add_pairing_nodes(self) -> None:
         """Adds nodes for pairing datasets together (from monet)."""
         pairing_cfg = self.config.pairing
         if not pairing_cfg:
@@ -125,7 +129,7 @@ class DAGBuilder:
             self.graph.add_edge(source_node, node_id)
             self.graph.add_edge(target_node, node_id)
 
-    def _add_combine_nodes(self):
+    def _add_combine_nodes(self) -> None:
         """Adds nodes for combining multiple paired datasets."""
         combine_cfg = self.config.combine
         if not combine_cfg:
@@ -168,7 +172,7 @@ class DAGBuilder:
             for pair_node_id in valid_sources:
                 self.graph.add_edge(pair_node_id, node_id)
 
-    def _add_statistics_nodes(self):
+    def _add_statistics_nodes(self) -> None:
         """Adds nodes for computing statistics on paired data (from monet-stats)."""
         stats_cfg = self.config.statistics
         if not stats_cfg:
@@ -208,9 +212,9 @@ class DAGBuilder:
                 kwargs=details.get("kwargs", {}),
             )
 
-            self.graph.add_edge(target_parent, node_id)
+            self.graph.add_edge(cast(str, target_parent), node_id)
 
-    def _add_plotting_nodes(self):
+    def _add_plotting_nodes(self) -> None:
         """Adds nodes for plotting data or statistics (from monet-plots)."""
         plots_cfg = self.config.plots
         if not plots_cfg:
@@ -249,4 +253,4 @@ class DAGBuilder:
                 kwargs=details.get("kwargs", {}),
             )
 
-            self.graph.add_edge(target_parent, node_id)
+            self.graph.add_edge(cast(str, target_parent), node_id)

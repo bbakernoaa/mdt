@@ -42,7 +42,7 @@ def update_history(obj: Any, message: str) -> Any:
                 current_attrs["history"] = message.strip()
 
             obj.attrs = current_attrs
-        except Exception:
+        except Exception:  # noqa: S110
             # Pandas attrs are experimental and might fail in some versions/objects
             pass
     return obj
@@ -72,12 +72,13 @@ def discover_spatial_dims(
     >>> lat, lon = discover_spatial_dims(da)
     >>> lat, lon = discover_spatial_dims(["latitude", "longitude"])
     """
+    search_dims: List[str]
     if isinstance(obj, (xr.DataArray, xr.Dataset)):
-        search_dims = list(obj.dims)
+        search_dims = [str(d) for d in obj.dims]
     elif isinstance(obj, str):
         search_dims = [obj]
     else:
-        search_dims = list(obj)
+        search_dims = [str(d) for d in obj]
 
     if dims is not None:
         search_dims = [d for d in search_dims if d in dims]

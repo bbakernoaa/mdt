@@ -52,6 +52,11 @@ build_command = ""
 [tool.semantic_release.branches.main]
 match = "main"
 
+[tool.semantic_release.branches.develop]
+match = "develop"
+prerelease = true
+prerelease_token = "dev"
+
 [tool.semantic_release.changelog]
 template_dir = ""
 
@@ -65,7 +70,7 @@ line-length = 148
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "D"]
+select = ["E", "F", "W", "I", "N", "D", "B", "S", "PT", "ARG", "PTH", "RUF"]
 ignore = [
     "D100",  # Missing docstring in public module (we will add them, but good to ignore if we miss one)
     "D104",  # Missing docstring in public package
@@ -76,3 +81,41 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "monetio.*",
+    "monet.*",
+    "monet_stats.*",
+    "monet_plots.*",
+    "xregrid.*",
+    "networkx.*",
+    "yaml.*",
+    "dask.*",
+    "dask_jobqueue.*",
+    "prefect.*",
+    "prefect_dask.*",
+    "ecflow.*",
+    "pandas.*",
+    "matplotlib.*",
+    "cartopy.*",
+    "hvplot.*",
+    "geoviews.*",
+    "holoviews.*",
+]
+ignore_missing_imports = true
