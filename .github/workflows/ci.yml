@@ -15,7 +15,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Lint
-        run: uv run ruff check src/ tests/
+        run: uvx ruff check src/ tests/
 
   type-check:
     runs-on: ubuntu-latest
