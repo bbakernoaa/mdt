@@ -92,6 +92,7 @@ convention = "numpy"
     "ARG005",  # Unused lambda argument
     "PT019",   # Fixture without value injected as parameter
     "PTH",     # Use Pathlib (we'll allow OS module in tests for now)
+    "D102",    # Missing docstring in public method
     "RUF002",  # Ambiguous unicode character
     "RUF015",  # Prefer next(iter())
     "RUF043",  # match= contains metacharacters
