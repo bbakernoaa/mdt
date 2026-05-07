@@ -42,7 +42,15 @@ MDT uses an abstract `Engine` class to decouple the workflow logic from the unde
 
 ### 4. Task Delegation (`mdt.tasks`)
 
-MDT acts strictly as an orchestrator. It does not contain heavy scientific logic. Instead, it delegates to the MONET ecosystem:
+MDT acts strictly as an orchestrator. It does not contain heavy scientific logic. Instead, it delegates to the MONET ecosystem.
+
+#### VirtualiZarr Integration
+For large-scale data handling, MDT integrates **VirtualiZarr**. When enabled in the `data` configuration, MDT uses `kerchunk` or `icechunk` to create a virtual Zarr representation of the source files. This allows the orchestrator to:
+- Perform metadata-only discovery of massive datasets.
+- Distribute data-parallel tasks more efficiently across Dask workers.
+- Avoid expensive data conversion or staging steps.
+
+The primary delegation remains:
 - **Data Loading**: `monetio`
 - **Pairing**: `monet`
 - **Statistics**: `monet-stats`
