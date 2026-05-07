@@ -56,6 +56,62 @@ The primary delegation remains:
 - **Statistics**: `monet-stats`
 - **Plotting**: `monet-plots`
 
+## Engine Implementation Details
+
+MDT supports different workflow paths through its Engine abstraction. The two primary implementations are the `PrefectEngine` and the `EcFlowEngine`.
+
+### Prefect + Dask Path
+
+The Prefect path is optimized for dynamic, pythonic workflows and scales using Dask.
+
+1.  **Dask Cluster Initialization**: MDT starts a central Dask scheduler. If HPC profiles are requested, it manually submits worker jobs to the batch system (SLURM/PBS) that connect back to this central scheduler.
+2.  **Resource Tagging**: Tasks are submitted to Prefect with Dask resource annotations (e.g., `resources={'COMPUTE': 1}`). This ensures tasks run on the appropriate hardware (e.g., download tasks on service nodes, heavy math on compute nodes).
+3.  **Lazy Execution**: Prefect manages the task futures, and Dask handles the actual distributed computation.
+
+```mermaid
+graph TD
+    subgraph "Prefect Orchestration"
+        A[Prefect Flow] --> B[Task Submission]
+        B --> C{Resource Tag?}
+        C -->|SERVICE| D[Service Workers]
+        C -->|COMPUTE| E[Compute Workers]
+    end
+    subgraph "Dask Distributed"
+        D --> F[monetio.load]
+        E --> G[monet.pair]
+        E --> H[monet_stats.compute]
+    end
+```
+
+### ecFlow Path
+
+The ecFlow path is designed for operational environments where workflow state is managed by a centralized ecFlow server.
+
+1.  **Suite Definition**: MDT translates the NetworkX DAG into an `ecflow.Defs` structure. Each DAG node becomes an `ecflow.Task` within an `ecflow.Family`.
+2.  **Trigger Logic**: Data dependencies from the DAG are converted into ecFlow trigger expressions (e.g., `trigger ./load_data == complete`).
+3.  **Wrapper Generation**: MDT generates `.ecf` Python scripts for every task. These scripts act as thin wrappers that call the MDT task functions and report status back to the server.
+4.  **Submission**: The entire suite is loaded into the ecFlow server and started.
+
+```mermaid
+graph LR
+    subgraph "MDT (Local)"
+        A[nx.DiGraph] --> B[Suite Builder]
+        A --> C[Wrapper Gen]
+    end
+    subgraph "ecFlow Server"
+        B --> D[Suite Definition]
+        D --> E[Task 1]
+        D --> F[Task 2]
+        E -.->|Trigger| F
+    end
+    subgraph "Execution Node"
+        E --> G[.ecf Script]
+        F --> H[.ecf Script]
+        G --> I[MDT Tasks]
+        H --> I
+    end
+```
+
 ## Execution Sequence
 
 The following sequence diagram shows the interaction between components during a `mdt run` command:
