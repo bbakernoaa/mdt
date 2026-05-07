@@ -21,13 +21,38 @@ The `data` section defines the sources of information for your verification.
 
 *   **`type`**: The `monetio` dataset name (e.g., `cmaq`, `wrfchem`, `aeronet`, `airnow`).
 *   **`kwargs`**: A dictionary of arguments passed to the `monetio` reader's open function.
+*   **`zarr_store`**: (Optional) Configuration for VirtualiZarr-based cloud-optimized access.
+
+### VirtualiZarr (Kerchunk / Icechunk)
+
+MDT supports virtualizing large datasets to enable efficient, random access without needing to convert the original files to Zarr. This is particularly useful for large model outputs stored in NetCDF or GRIB format.
+
+*   **`enabled`**: Set to `true` to enable virtualization.
+*   **`backend`**: The virtualization engine to use (`kerchunk_json`, `kerchunk_parquet`, or `icechunk`).
+*   **`store_path`**: The local or cloud path where the virtual index will be stored.
+*   **`icechunk_repo`**: (Required for `icechunk`) The path to the Icechunk repository.
 
 ```yaml
 data:
-  cmaq_output:
+  # Example using Kerchunk (JSON)
+  cmaq_virtual:
     type: "cmaq"
     kwargs:
-      fname: "/path/to/cmaq_file.nc"
+      fname: "/path/to/large_cmaq_collection/*.nc"
+    zarr_store:
+      enabled: true
+      backend: "kerchunk_json"
+      store_path: "./stores/cmaq_index.json"
+
+  # Example using Icechunk
+  gefs_virtual:
+    type: "gefs"
+    kwargs:
+      fname: "s3://noaa-gefs-pds/..."
+    zarr_store:
+      enabled: true
+      backend: "icechunk"
+      icechunk_repo: "s3://my-bucket/gefs-repo"
 ```
 
 ---
