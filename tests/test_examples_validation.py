@@ -75,6 +75,7 @@ def test_example_configs_cli_dry_run_ecflow(mock_get_engine, config_path, monkey
     """Simulate a CLI 'run' of the examples with a mocked ecflow engine."""
     import sys
     import types
+
     from mdt.cli import main
 
     # Mock ecflow module

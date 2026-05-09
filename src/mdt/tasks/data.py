@@ -71,8 +71,7 @@ def load_data(
         except TypeError as e:
             # Handle cases where reader doesn't support VirtualiZarr kwargs yet
             logger.warning(
-                "VirtualiZarr load failed for '%s' due to unexpected arguments: %s. "
-                "Retrying with standard monetio.load.",
+                "VirtualiZarr load failed for '%s' due to unexpected arguments: %s. Retrying with standard monetio.load.",
                 name,
                 e,
             )

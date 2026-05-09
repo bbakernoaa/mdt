@@ -233,9 +233,7 @@ class PrefectEngine(Engine):
                             task_options["tags"] = ["virtualizarr"]
                             task_options["task_run_name"] = f"Load Data: {name} [VirtualiZarr]"
 
-                        future = p_load_data.with_options(**task_options).submit(
-                            name=name, dataset_type=node_data["dataset_type"], kwargs=kwargs
-                        )
+                        future = p_load_data.with_options(**task_options).submit(name=name, dataset_type=node_data["dataset_type"], kwargs=kwargs)
                         task_outputs[node_id] = future
 
                     elif task_type == "pair_data":
