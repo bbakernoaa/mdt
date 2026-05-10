@@ -207,29 +207,9 @@ def _tracking_ecflow(monkeypatch):
     fake = types.ModuleType("ecflow")
     created = {"defs": [], "suites": [], "families": {}, "tasks": {}}
 
-    def _make_defs(*a, **kw):
-        m = MagicMock(name="Defs")
-        created["defs"].append(m)
-        return m
-
-    def _make_suite(*a, **kw):
-        m = MagicMock(name=f"Suite({a})")
-        m._suite_name = a[0] if a else None
-        created["suites"].append(m)
-        return m
-
-    def _make_family(*a, **kw):
-        name = a[0] if a else None
-        m = MagicMock(name=f"Family({name})")
-        m._family_name = name
-        created["families"][name] = m
-        return m
-
-    def _make_task(*a, **kw):
-        name = a[0] if a else None
+    def _make_task(name):
         m = MagicMock(name=f"Task({name})")
         m._task_name = name
-        # Collect add_variable calls for later inspection
         m._variables = {}
 
         def _record_var(key, value):
@@ -237,6 +217,26 @@ def _tracking_ecflow(monkeypatch):
 
         m.add_variable = _record_var
         created["tasks"][name] = m
+        return m
+
+    def _make_family(name):
+        m = MagicMock(name=f"Family({name})")
+        m._family_name = name
+        m.add_task = MagicMock(side_effect=_make_task)
+        created["families"][name] = m
+        return m
+
+    def _make_suite(name):
+        m = MagicMock(name=f"Suite({name})")
+        m._suite_name = name
+        m.add_family = MagicMock(side_effect=_make_family)
+        created["suites"].append(m)
+        return m
+
+    def _make_defs(*a, **kw):
+        m = MagicMock(name="Defs")
+        m.add_suite = MagicMock(side_effect=_make_suite)
+        created["defs"].append(m)
         return m
 
     fake.Defs = _make_defs
@@ -361,11 +361,11 @@ class TestBuildSuiteTaskCreation:
 
         families = _tracking_ecflow["families"]
         # load family should have add_task called for load_obs and load_model
-        load_calls = [c.args[0]._task_name for c in families["load"].add_task.call_args_list]
+        load_calls = [c.args[0] for c in families["load"].add_task.call_args_list]
         assert sorted(load_calls) == ["load_model", "load_obs"]
 
         # pair family should have pair_obs_model
-        pair_calls = [c.args[0]._task_name for c in families["pair"].add_task.call_args_list]
+        pair_calls = [c.args[0] for c in families["pair"].add_task.call_args_list]
         assert pair_calls == ["pair_obs_model"]
 
 

@@ -101,16 +101,23 @@ def _find_metric(module: Any, metric_name: str) -> Any:
     Any or None
         The metric function if found, else None.
     """
-    if hasattr(module, metric_name):
-        return getattr(module, metric_name)
+    # 1. Alias Handling (Aero Protocol Standard)
+    aliases = {"BIAS": "mb", "MBIAS": "mb"}
+    target_name = aliases.get(metric_name.upper(), metric_name)
 
+    # 2. Direct lookup
+    if hasattr(module, target_name):
+        return getattr(module, target_name)
+
+    # 3. Case-insensitive search
     for attr in dir(module):
-        if attr.lower() == metric_name.lower():
+        if attr.lower() == target_name.lower():
             return getattr(module, attr)
 
+    # 4. Search in sub-module
     if hasattr(module, "stats"):
         for attr in dir(module.stats):
-            if attr.lower() == metric_name.lower():
+            if attr.lower() == target_name.lower():
                 return getattr(module.stats, attr)
 
     return None
@@ -184,9 +191,14 @@ def _execute_metric(
                 axis = None
 
         # Check function signature for native support
-        sig = inspect.signature(func)
-        has_weights = "weights" in sig.parameters
-        axis_param = "axis" if "axis" in sig.parameters else ("dim" if "dim" in sig.parameters else None)
+        try:
+            sig = inspect.signature(func)
+            has_weights = "weights" in sig.parameters
+            axis_param = "axis" if "axis" in sig.parameters else ("dim" if "dim" in sig.parameters else None)
+        except (ValueError, TypeError):
+            # Fallback for built-ins or functions without signatures
+            has_weights = False
+            axis_param = None
 
         # 3. Weighted Logic (Aero Protocol + monet-stats backend)
         if w is not None:
@@ -218,4 +230,15 @@ def _execute_metric(
     # data must be pd.DataFrame based on the Union type hint
     obs = data[obs_var]
     mod = data[mod_var]
+
+    if weights is not None:
+        # Check if the function supports weights (Pandas-compatible)
+        try:
+            sig = inspect.signature(func)
+            if "weights" in sig.parameters:
+                weights_val = data[weights] if isinstance(weights, str) else weights
+                return cast(pd.Series, func(obs, mod, weights=weights_val, **call_kwargs))
+        except (ValueError, TypeError):
+            pass
+
     return cast(pd.Series, func(obs, mod, **call_kwargs))

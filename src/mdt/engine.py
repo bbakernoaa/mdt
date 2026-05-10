@@ -129,7 +129,12 @@ class PrefectEngine(Engine):
             if mode == "local":
                 logger.info(f"Scaling local workers for '{cluster_name}'")
                 # Scale the central cluster and explicitly assign resources
+                # We use scale(cores=...) or similar if possible, but scale(workers)
+                # is standard for LocalCluster.
                 primary_cluster.scale(workers)
+                # Dask workers started via scale() on LocalCluster might not automatically
+                # get the resource tag. For LocalCluster we usually set it in the constructor.
+                # However, for multi-cluster we rely on the resources dict if possible.
             else:
                 logger.info(f"Setting up HPC cluster '{cluster_name}' (mode: {mode}) connecting to {scheduler_address}")
 
@@ -237,25 +242,19 @@ class PrefectEngine(Engine):
                         task_outputs[node_id] = future
 
                     elif task_type == "pair_data":
-                        # Find which predecessor is source and which is target
-                        # Based on our DAG builder, predecessors are the load nodes for source and target
-                        source_node = None
-                        target_node = None
-                        pairing_name = node_data["name"]
-                        pairing_details = self.config.pairing.get(pairing_name, {})
-                        source_name = pairing_details.get("source")
-                        target_name = pairing_details.get("target")
+                        # Resolve source and target node IDs from DAG metadata
+                        source_name = node_data.get("source_name")
+                        target_name = node_data.get("target_name")
 
-                        if source_name:
-                            source_node = f"load_{source_name}"
-                        if target_name:
-                            target_node = f"load_{target_name}"
+                        # Resolve node IDs from the actual predecessors in the DAG
+                        source_node_id = next((p for p in predecessors if source_name and p.endswith(f"_{source_name}")), None)
+                        target_node_id = next((p for p in predecessors if target_name and p.endswith(f"_{target_name}")), None)
 
                         future = p_pair_data.submit(
                             name=node_data["name"],
                             method=node_data["method"],
-                            source_data=task_outputs.get(source_node) if source_node else None,
-                            target_data=task_outputs.get(target_node) if target_node else None,
+                            source_data=task_outputs.get(source_node_id) if source_node_id else None,
+                            target_data=task_outputs.get(target_node_id) if target_node_id else None,
                             kwargs=node_data["kwargs"],
                         )
                         task_outputs[node_id] = future
@@ -310,6 +309,20 @@ class PrefectEngine(Engine):
         cluster = self._setup_dask_clusters()
 
         # Execute the Prefect flow, explicitly overriding the task_runner with our central cluster
-        results: Dict[str, Any] = mdt_flow.with_options(task_runner=cast(Any, DaskTaskRunner(address=cluster.scheduler_address)))()
+        logger.info("Starting Prefect flow execution...")
+        task_futures: Dict[str, Any] = mdt_flow.with_options(task_runner=cast(Any, DaskTaskRunner(address=cluster.scheduler_address)))()
 
-        return results
+        # Requirement: Ensure the CLI waits for task completion.
+        # Prefect .submit() returns futures. We need to wait for them.
+        logger.info("Waiting for tasks to complete...")
+        final_results = {}
+        for node_id, future in task_futures.items():
+            try:
+                # This will block until the specific task is done.
+                final_results[node_id] = future.result()
+            except Exception as e:
+                logger.error(f"Task {node_id} failed: {e}")
+                final_results[node_id] = e
+
+        logger.info("All tasks completed.")
+        return final_results

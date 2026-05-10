@@ -209,9 +209,8 @@ class EcFlowEngine(Engine):
         # Create one family per task type.
         families: dict[str, Any] = {}
         for family_name in _FAMILY_MAP.values():
-            family = ecflow.Family(family_name)
+            family = suite.add_family(family_name)
             families[family_name] = family
-            suite.add_family(family)
 
         # Build lookups for trigger generation.
         node_family: dict[str, str] = {}
@@ -222,41 +221,39 @@ class EcFlowEngine(Engine):
             family_name = _FAMILY_MAP[task_type]
             node_family[node_id] = family_name
 
-            task = ecflow.Task(node_id)
+            task_node = families[family_name].add_task(node_id)
+            node_tasks[node_id] = task_node
 
             # --- ecFlow variables ---
-            task.add_variable("TASK_TYPE", data["task_type"])
-            task.add_variable("TASK_NAME", data["name"])
-            task.add_variable("DATASET_TYPE", data.get("dataset_type") or "")
-            task.add_variable("TASK_KWARGS", json.dumps(data.get("kwargs") or {}))
-            task.add_variable("METRICS", json.dumps(data.get("metrics") or []))
-            task.add_variable("PLOT_TYPE", data.get("plot_type") or "")
-            task.add_variable("METHOD", data.get("method") or "")
-            task.add_variable("DIM", data.get("dim") or "")
-            task.add_variable("SOURCES", json.dumps(data.get("sources") or []))
-            task.add_variable("CLUSTER", data.get("cluster") or "")
+            task_node.add_variable("TASK_TYPE", data["task_type"])
+            task_node.add_variable("TASK_NAME", data["name"])
+            task_node.add_variable("DATASET_TYPE", data.get("dataset_type") or "")
+            task_node.add_variable("TASK_KWARGS", json.dumps(data.get("kwargs") or {}))
+            task_node.add_variable("METRICS", json.dumps(data.get("metrics") or []))
+            task_node.add_variable("PLOT_TYPE", data.get("plot_type") or "")
+            task_node.add_variable("METHOD", data.get("method") or "")
+            task_node.add_variable("DIM", data.get("dim") or "")
+            task_node.add_variable("SOURCES", json.dumps(data.get("sources") or []))
+            task_node.add_variable("CLUSTER", data.get("cluster") or "")
 
             if task_type == "load_data":
                 node_kwargs = data.get("kwargs") or {}
-                task.add_variable(
+                task_node.add_variable(
                     "ZARR_STORE_ENABLED",
                     str(node_kwargs.get("use_virtualizarr", False)).lower(),
                 )
-                task.add_variable(
+                task_node.add_variable(
                     "ZARR_STORE_BACKEND",
                     node_kwargs.get("virtualizarr_backend", ""),
                 )
-                task.add_variable(
+                task_node.add_variable(
                     "ZARR_STORE_PATH",
                     node_kwargs.get("store_path", ""),
                 )
-                task.add_variable(
+                task_node.add_variable(
                     "ZARR_STORE_ICECHUNK_REPO",
                     node_kwargs.get("icechunk_repo", ""),
                 )
-
-            families[family_name].add_task(task)
-            node_tasks[node_id] = task
 
         # --- trigger expressions from DAG edges ---
         for node_id in self.dag.nodes:

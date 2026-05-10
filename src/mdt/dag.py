@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 
@@ -88,6 +88,31 @@ class DAGBuilder:
                 kwargs=kwargs,
             )
 
+    def _find_node(self, name: str) -> str | None:
+        """
+        Attempts to resolve a logical name into a node ID in the graph.
+
+        Searches for prefixes: plot_, stats_, combine_, pair_, load_.
+        Prioritizes more processed nodes (plots/stats) over raw sources.
+
+        Parameters
+        ----------
+        name : str
+            The logical name of the task/dataset to resolve.
+
+        Returns
+        -------
+        str or None
+            The node ID if found, else None.
+        """
+        # Search in reverse order to prioritize downstream/processed nodes
+        prefixes = ["plot", "stats", "combine", "pair", "load"]
+        for p in prefixes:
+            node_id = f"{p}_{name}"
+            if node_id in self.graph:
+                return node_id
+        return None
+
     def _add_pairing_nodes(self) -> None:
         """Adds nodes for pairing datasets together (from monet)."""
         pairing_cfg = self.config.pairing
@@ -98,7 +123,6 @@ class DAGBuilder:
 
         for name, details in pairing_cfg.items():
             node_id = f"pair_{name}"
-            # E.g. source: load_gcafs, target: load_aeronet
             source = details.get("source")
             target = details.get("target")
 
@@ -106,24 +130,25 @@ class DAGBuilder:
                 logger.warning(f"Pairing '{name}' is missing 'source' or 'target'. Skipping.")
                 continue
 
-            # Dependencies: both datasets must be loaded before they can be paired
-            source_node = f"load_{source}"
-            target_node = f"load_{target}"
+            source_node = self._find_node(source)
+            target_node = self._find_node(target)
 
-            if source_node not in self.graph:
-                logger.error(f"Source data '{source}' for pairing '{name}' not found. Skipping pairing.")
+            if not source_node:
+                logger.error(f"Source '{source}' for pairing '{name}' not found. Skipping pairing.")
                 continue
-            if target_node not in self.graph:
-                logger.error(f"Target data '{target}' for pairing '{name}' not found. Skipping pairing.")
+            if not target_node:
+                logger.error(f"Target '{target}' for pairing '{name}' not found. Skipping pairing.")
                 continue
 
             self.graph.add_node(
                 node_id,
                 task_type="pair_data",
                 name=name,
-                method=details.get("method", "interpolate"),  # Default to interpolate or similar
+                method=details.get("method", "interpolate"),
                 cluster=details.get("cluster", default_cluster),
                 kwargs=details.get("kwargs", {}),
+                source_name=source,
+                target_name=target,
             )
 
             self.graph.add_edge(source_node, node_id)
@@ -146,12 +171,12 @@ class DAGBuilder:
                 logger.warning(f"Combine task '{name}' has no sources. Skipping.")
                 continue
 
-            # Check if all sources exist (as paired nodes)
+            # Check if all sources exist
             valid_sources = []
             for source in sources:
-                pair_node_id = f"pair_{source}"
-                if pair_node_id in self.graph:
-                    valid_sources.append(pair_node_id)
+                source_node_id = self._find_node(source)
+                if source_node_id:
+                    valid_sources.append(source_node_id)
                 else:
                     logger.warning(f"Source '{source}' for combine task '{name}' not found. Skipping source.")
 
@@ -182,24 +207,15 @@ class DAGBuilder:
 
         for name, details in stats_cfg.items():
             node_id = f"stats_{name}"
-            input_data = details.get("input")  # E.g., a pairing name or just a dataset
+            input_data = details.get("input")
 
             if not input_data:
                 logger.warning(f"Statistics task '{name}' is missing 'input'. Skipping.")
                 continue
 
-            # We need to map 'input' to a node. It could be a 'pair_' node or a 'load_' node.
-            # Usually stats are done on paired data, but we allow either for flexibility.
-            possible_nodes = [f"combine_{input_data}", f"pair_{input_data}", f"load_{input_data}"]
-            found_edge = False
-            target_parent = None
-            for p in possible_nodes:
-                if p in self.graph:
-                    target_parent = p
-                    found_edge = True
-                    break
+            target_parent = self._find_node(input_data)
 
-            if not found_edge:
+            if not target_parent:
                 logger.error(f"Input '{input_data}' for statistics '{name}' not found. Skipping stats.")
                 continue
 
@@ -212,7 +228,7 @@ class DAGBuilder:
                 kwargs=details.get("kwargs", {}),
             )
 
-            self.graph.add_edge(cast(str, target_parent), node_id)
+            self.graph.add_edge(target_parent, node_id)
 
     def _add_plotting_nodes(self) -> None:
         """Adds nodes for plotting data or statistics (from monet-plots)."""
@@ -224,23 +240,15 @@ class DAGBuilder:
 
         for name, details in plots_cfg.items():
             node_id = f"plot_{name}"
-            input_data = details.get("input")  # E.g., pair_name, stats_name, or load_name
+            input_data = details.get("input")
 
             if not input_data:
                 logger.warning(f"Plot task '{name}' is missing 'input'. Skipping.")
                 continue
 
-            # Find the dependency. Could be stats, combine, pair, or load
-            possible_nodes = [f"stats_{input_data}", f"combine_{input_data}", f"pair_{input_data}", f"load_{input_data}"]
-            found_edge = False
-            target_parent = None
-            for p in possible_nodes:
-                if p in self.graph:
-                    target_parent = p
-                    found_edge = True
-                    break
+            target_parent = self._find_node(input_data)
 
-            if not found_edge:
+            if not target_parent:
                 logger.error(f"Input '{input_data}' for plot '{name}' not found. Skipping plot.")
                 continue
 
@@ -248,9 +256,9 @@ class DAGBuilder:
                 node_id,
                 task_type="generate_plot",
                 name=name,
-                plot_type=details.get("type", "spatial"),  # Type of plot to generate
+                plot_type=details.get("type", "spatial"),
                 cluster=details.get("cluster", default_cluster),
                 kwargs=details.get("kwargs", {}),
             )
 
-            self.graph.add_edge(cast(str, target_parent), node_id)
+            self.graph.add_edge(target_parent, node_id)

@@ -104,6 +104,8 @@ def _generate_static_plot(
 
     try:
         plot_class = _find_plot_class(plot_type)
+        if not callable(plot_class):
+            raise ValueError(f"Discovered plot type '{plot_type}' is not a valid callable class.")
 
         # Some plots expect DataFrames (TimeSeries, Taylor), others expect Xarray (Spatial)
         # We try to provide the expected format by default but allow the plot class to handle it.
@@ -114,10 +116,14 @@ def _generate_static_plot(
         else:
             data = input_data
 
+        # Filter kwargs: separate constructor args from plot() args
+        # For now, we assume most kwargs can go to both, but we MUST exclude 'savename'
+        # which we already popped.
         plot_obj = plot_class(data, **kwargs)
 
         # Dispatch to plot() method if it exists (for standard Matplotlib rendering)
         if hasattr(plot_obj, "plot"):
+            # We pass kwargs again to plot() as many monet-plots use this pattern
             plot_obj.plot(**kwargs)
 
         plot_obj.save(savename)
@@ -139,8 +145,13 @@ def _generate_interactive_plot(
     kwargs: Dict[str, Any],
 ) -> Any:
     """Track B: Interactive plotting with monet-plots (HvPlot/GeoViews)."""
+    # Pop savename if it exists, though Track B usually doesn't save to file immediately
+    kwargs.pop("savename", None)
+
     try:
         plot_class = _find_plot_class(plot_type)
+        if not callable(plot_class):
+            raise ValueError(f"Discovered plot type '{plot_type}' is not a valid callable class.")
 
         if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
             # Use cast to Any to avoid "Series[Any]" not callable error
