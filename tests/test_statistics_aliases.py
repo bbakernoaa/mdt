@@ -10,9 +10,11 @@ sys.modules["monet_stats"] = mock_monet_stats
 # Mock other dependencies if needed
 sys.modules["yaml"] = MagicMock()
 
-from mdt.tasks.statistics import _find_metric
+from mdt.tasks.statistics import _find_metric  # noqa: E402
+
 
 def test_find_metric_aliases():
+    """Test that find_metric correctly identifies aliases like BIAS."""
     # Test case-insensitive match
     metric = _find_metric(mock_monet_stats, "MB")
     assert metric is mock_monet_stats.mb
@@ -27,6 +29,7 @@ def test_find_metric_aliases():
 
     # Test non-existent metric
     assert _find_metric(mock_monet_stats, "NONEXISTENT") is None
+
 
 if __name__ == "__main__":
     test_find_metric_aliases()
