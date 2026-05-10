@@ -103,23 +103,37 @@ def _find_metric(module: Any, metric_name: str) -> Any:
     """
     # 1. Alias Handling (Aero Protocol Standard)
     aliases = {"BIAS": "mb", "MBIAS": "mb"}
-    target_name = aliases.get(metric_name.upper(), metric_name)
+    upper_name = metric_name.upper()
+    if upper_name in aliases:
+        target_name = aliases[upper_name]
+        logger.debug(f"Alias found: mapping '{metric_name}' to '{target_name}'")
+    else:
+        target_name = metric_name
 
     # 2. Direct lookup
     if hasattr(module, target_name):
+        logger.debug(f"Found metric '{target_name}' via direct lookup.")
         return getattr(module, target_name)
 
     # 3. Case-insensitive search
     for attr in dir(module):
         if attr.lower() == target_name.lower():
+            logger.debug(f"Found metric '{target_name}' via case-insensitive search as '{attr}'.")
             return getattr(module, attr)
 
     # 4. Search in sub-module
     if hasattr(module, "stats"):
         for attr in dir(module.stats):
             if attr.lower() == target_name.lower():
+                logger.debug(f"Found metric '{target_name}' in 'stats' submodule as '{attr}'.")
                 return getattr(module.stats, attr)
 
+    try:
+        mod_name = module.__name__
+    except AttributeError:
+        mod_name = str(module)
+
+    logger.warning(f"Metric '{target_name}' could not be found in {mod_name}")
     return None
 
 

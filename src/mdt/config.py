@@ -42,57 +42,75 @@ class ConfigParser:
         required_keys = ["data"]
         for key in required_keys:
             if key not in self.config:
-                logger.error(f"Configuration is missing top-level key: '{key}'.")
-                raise ValueError(f"Configuration is missing top-level key: '{key}'.")
+                msg = f"Configuration validation failed: missing top-level key '{key}'."
+                logger.error(msg)
+                raise ValueError(msg)
 
         # Ensure 'data' is a dictionary if it exists
         if "data" in self.config:
             if not isinstance(self.config["data"], dict):
-                raise ValueError("'data' section in configuration must be a dictionary.")
+                raise ValueError(f"Configuration validation failed: 'data' section must be a dictionary, got {type(self.config['data']).__name__}.")
             for name, details in self.config["data"].items():
-                if not isinstance(details, dict) or "type" not in details:
-                    raise ValueError(f"Data source '{name}' must have a 'type' field.")
+                if not isinstance(details, dict):
+                    raise ValueError(f"Configuration validation failed: Data source '{name}' must be a mapping, got {type(details).__name__}.")
+                if "type" not in details:
+                    raise ValueError(f"Configuration validation failed: Data source '{name}' is missing the required 'type' field.")
 
                 zarr_store = details.get("zarr_store")
                 if zarr_store is not None:
                     if not isinstance(zarr_store, dict):
-                        raise ValueError(f"Data source '{name}': 'zarr_store' must be a mapping.")
+                        raise ValueError(
+                            f"Configuration validation failed: Data source '{name}': "
+                            f"'zarr_store' must be a mapping, got {type(zarr_store).__name__}."
+                        )
                     enabled = zarr_store.get("enabled", False)
                     if enabled:
                         backend = zarr_store.get("backend", "kerchunk_json")
                         if backend not in VALID_ZARR_BACKENDS:
                             raise ValueError(
-                                f"Data source '{name}': unsupported zarr_store.backend '{backend}'. Supported: {sorted(VALID_ZARR_BACKENDS)}"
+                                f"Configuration validation failed: Data source '{name}': "
+                                f"unsupported zarr_store.backend '{backend}'. "
+                                f"Supported: {sorted(VALID_ZARR_BACKENDS)}"
                             )
                         if backend == "icechunk" and not zarr_store.get("icechunk_repo"):
-                            raise ValueError(f"Data source '{name}': 'icechunk_repo' is required when zarr_store.backend is 'icechunk'.")
+                            raise ValueError(
+                                f"Configuration validation failed: Data source '{name}': 'icechunk_repo' is required for 'icechunk' backend."
+                            )
 
         if "pairing" in self.config:
             if not isinstance(self.config["pairing"], dict):
-                raise ValueError("'pairing' section in configuration must be a dictionary.")
+                raise ValueError(
+                    f"Configuration validation failed: 'pairing' section must be a dictionary, got {type(self.config['pairing']).__name__}."
+                )
             for name, details in self.config["pairing"].items():
                 if not isinstance(details, dict):
-                    raise ValueError(f"Pairing '{name}' must be a dictionary.")
+                    raise ValueError(f"Configuration validation failed: Pairing '{name}' must be a dictionary, got {type(details).__name__}.")
                 if "source" not in details or "target" not in details:
-                    raise ValueError(f"Pairing '{name}' must specify both 'source' and 'target'.")
+                    raise ValueError(f"Configuration validation failed: Pairing '{name}' must specify both 'source' and 'target' keys.")
 
         if "statistics" in self.config:
             if not isinstance(self.config["statistics"], dict):
-                raise ValueError("'statistics' section in configuration must be a dictionary.")
+                raise ValueError(
+                    f"Configuration validation failed: 'statistics' section must be a dictionary, got {type(self.config['statistics']).__name__}."
+                )
             for name, details in self.config["statistics"].items():
                 if not isinstance(details, dict):
-                    raise ValueError(f"Statistics task '{name}' must be a dictionary.")
+                    raise ValueError(
+                        f"Configuration validation failed: Statistics task '{name}' must be a dictionary, got {type(details).__name__}."
+                    )
                 if "input" not in details:
-                    raise ValueError(f"Statistics task '{name}' must specify an 'input'.")
+                    raise ValueError(f"Configuration validation failed: Statistics task '{name}' must specify an 'input' key.")
 
         if "plots" in self.config:
             if not isinstance(self.config["plots"], dict):
-                raise ValueError("'plots' section in configuration must be a dictionary.")
+                raise ValueError(
+                    f"Configuration validation failed: 'plots' section must be a dictionary, got {type(self.config['plots']).__name__}."
+                )
             for name, details in self.config["plots"].items():
                 if not isinstance(details, dict):
-                    raise ValueError(f"Plot task '{name}' must be a dictionary.")
+                    raise ValueError(f"Configuration validation failed: Plot task '{name}' must be a dictionary, got {type(details).__name__}.")
                 if "input" not in details:
-                    raise ValueError(f"Plot task '{name}' must specify an 'input'.")
+                    raise ValueError(f"Configuration validation failed: Plot task '{name}' must specify an 'input' key.")
 
     @property
     def data(self) -> Dict[str, Any]:
@@ -151,21 +169,24 @@ class ConfigParser:
         """
         exec_cfg: Dict[str, Any] = self.config.get("execution", {})
         if not exec_cfg:
+            logger.debug("No 'execution' section found; using default local 'compute' cluster.")
             return {"default_cluster": "compute", "clusters": {"compute": {"mode": "local"}}}
 
         # Backwards compatibility: if they just provided 'mode', wrap it in a 'compute' cluster.
         # Preserve any non-cluster keys (e.g. orchestrator, ecflow_host, etc.)
         # at the top level so engine implementations can still access them.
         if "mode" in exec_cfg and "clusters" not in exec_cfg:
+            logger.debug("Legacy 'execution' format detected (missing 'clusters' key). Mapping to 'compute' cluster.")
             cluster_cfg = {k: v for k, v in exec_cfg.items() if k == "mode" or k == "workers"}
             result = {k: v for k, v in exec_cfg.items() if k not in ("mode", "workers")}
             result["default_cluster"] = "compute"
             result["clusters"] = {"compute": cluster_cfg if cluster_cfg else exec_cfg}
-            return result
+            exec_cfg = result
 
         # Ensure default_cluster is set if clusters are defined
         if "clusters" in exec_cfg and "default_cluster" not in exec_cfg:
             exec_cfg["default_cluster"] = next(iter(exec_cfg["clusters"].keys()))
+            logger.info(f"Using '{exec_cfg['default_cluster']}' as the default cluster.")
 
         # Ensure a service cluster is always defined for service-node tasks (like data download)
         if "service" not in exec_cfg.get("clusters", {}):
@@ -180,6 +201,7 @@ class ConfigParser:
             else:
                 service_mode = "local"
 
+            logger.info(f"Automatically creating 'service' cluster with mode='{service_mode}' for data orchestration.")
             exec_cfg.setdefault("clusters", {})["service"] = {"mode": service_mode, "workers": 1}
 
         return exec_cfg

@@ -79,12 +79,14 @@ class DAGBuilder:
                 if zarr_store.get("icechunk_repo"):
                     kwargs["icechunk_repo"] = zarr_store["icechunk_repo"]
 
+            target_cluster = details.get("cluster", default_cluster)
+            logger.debug(f"Adding data node: {node_id} (type={dataset_type}, cluster={target_cluster})")
             self.graph.add_node(
                 node_id,
                 task_type="load_data",
                 name=name,
                 dataset_type=dataset_type,
-                cluster=details.get("cluster", default_cluster),
+                cluster=target_cluster,
                 kwargs=kwargs,
             )
 
@@ -110,7 +112,9 @@ class DAGBuilder:
         for p in prefixes:
             node_id = f"{p}_{name}"
             if node_id in self.graph:
+                logger.debug(f"Resolved name '{name}' to node ID '{node_id}' using prefix '{p}_'")
                 return node_id
+        logger.warning(f"Failed to resolve name '{name}' to any node ID in the graph.")
         return None
 
     def _add_pairing_nodes(self) -> None:
@@ -140,18 +144,22 @@ class DAGBuilder:
                 logger.error(f"Target '{target}' for pairing '{name}' not found. Skipping pairing.")
                 continue
 
+            target_cluster = details.get("cluster", default_cluster)
+            logger.debug(f"Adding pairing node: {node_id} (source={source_node}, target={target_node}, cluster={target_cluster})")
             self.graph.add_node(
                 node_id,
                 task_type="pair_data",
                 name=name,
                 method=details.get("method", "interpolate"),
-                cluster=details.get("cluster", default_cluster),
+                cluster=target_cluster,
                 kwargs=details.get("kwargs", {}),
                 source_name=source,
                 target_name=target,
             )
 
+            logger.debug(f"Adding edge: {source_node} -> {node_id}")
             self.graph.add_edge(source_node, node_id)
+            logger.debug(f"Adding edge: {target_node} -> {node_id}")
             self.graph.add_edge(target_node, node_id)
 
     def _add_combine_nodes(self) -> None:
@@ -184,17 +192,20 @@ class DAGBuilder:
                 logger.error(f"Combine task '{name}' has no valid sources. Skipping.")
                 continue
 
+            target_cluster = details.get("cluster", default_cluster)
+            logger.debug(f"Adding combine node: {node_id} (sources={valid_sources}, cluster={target_cluster})")
             self.graph.add_node(
                 node_id,
                 task_type="combine_paired_data",
                 name=name,
                 sources=sources,  # List of original names, Engine uses this to look them up
                 dim=dim,
-                cluster=details.get("cluster", default_cluster),
+                cluster=target_cluster,
                 kwargs=details.get("kwargs", {}),
             )
 
             for pair_node_id in valid_sources:
+                logger.debug(f"Adding edge: {pair_node_id} -> {node_id}")
                 self.graph.add_edge(pair_node_id, node_id)
 
     def _add_statistics_nodes(self) -> None:
@@ -219,15 +230,18 @@ class DAGBuilder:
                 logger.error(f"Input '{input_data}' for statistics '{name}' not found. Skipping stats.")
                 continue
 
+            target_cluster = details.get("cluster", default_cluster)
+            logger.debug(f"Adding statistics node: {node_id} (input={target_parent}, cluster={target_cluster})")
             self.graph.add_node(
                 node_id,
                 task_type="compute_statistics",
                 name=name,
                 metrics=details.get("metrics", []),
-                cluster=details.get("cluster", default_cluster),
+                cluster=target_cluster,
                 kwargs=details.get("kwargs", {}),
             )
 
+            logger.debug(f"Adding edge: {target_parent} -> {node_id}")
             self.graph.add_edge(target_parent, node_id)
 
     def _add_plotting_nodes(self) -> None:
@@ -252,13 +266,16 @@ class DAGBuilder:
                 logger.error(f"Input '{input_data}' for plot '{name}' not found. Skipping plot.")
                 continue
 
+            target_cluster = details.get("cluster", default_cluster)
+            logger.debug(f"Adding plotting node: {node_id} (input={target_parent}, cluster={target_cluster})")
             self.graph.add_node(
                 node_id,
                 task_type="generate_plot",
                 name=name,
                 plot_type=details.get("type", "spatial"),
-                cluster=details.get("cluster", default_cluster),
+                cluster=target_cluster,
                 kwargs=details.get("kwargs", {}),
             )
 
+            logger.debug(f"Adding edge: {target_parent} -> {node_id}")
             self.graph.add_edge(target_parent, node_id)

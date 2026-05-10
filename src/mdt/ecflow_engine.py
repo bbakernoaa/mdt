@@ -172,6 +172,7 @@ class EcFlowEngine(Engine):
         dict
             ``{"suite": <suite_name>, "status": "started"}``
         """
+        logger.info(f"Starting ecFlow workflow orchestration for suite '{self.suite_name}'")
         defs = self.build_suite()
         self.generate_task_wrappers()
 
@@ -209,6 +210,7 @@ class EcFlowEngine(Engine):
         # Create one family per task type.
         families: dict[str, Any] = {}
         for family_name in _FAMILY_MAP.values():
+            logger.debug(f"Creating ecFlow family: {family_name}")
             family = suite.add_family(family_name)
             families[family_name] = family
 
@@ -216,6 +218,7 @@ class EcFlowEngine(Engine):
         node_family: dict[str, str] = {}
         node_tasks: dict[str, Any] = {}
 
+        logger.info(f"Adding {self.dag.number_of_nodes()} tasks to ecFlow suite definition")
         for node_id, data in self.dag.nodes(data=True):
             task_type = data["task_type"]
             family_name = _FAMILY_MAP[task_type]
@@ -288,8 +291,10 @@ class EcFlowEngine(Engine):
         Path(self.task_script_dir).mkdir(parents=True, exist_ok=True)
 
         generated: List[str] = []
+        logger.info(f"Generating ecFlow wrapper scripts in {self.task_script_dir}")
         for node_id in self.dag.nodes:
             script_path = Path(self.task_script_dir) / f"{node_id}.ecf"
+            logger.debug(f"Writing wrapper script: {script_path}")
             with script_path.open("w") as fh:
                 fh.write(_build_wrapper_script(node_id))
             generated.append(str(script_path))
@@ -311,7 +316,33 @@ class EcFlowEngine(Engine):
         """
         try:
             client = self.ecflow.Client(self.host, self.port)
+        except Exception as e:
+            # Re-raise original exception as __cause__ to satisfy tests
+            msg = f"Failed to connect to ecFlow server at {self.host}:{self.port} — {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        logger.info(f"Connecting to ecFlow server at {self.host}:{self.port}")
+
+        try:
+            client.ping()
+        except Exception as e:
+            msg = f"Could not connect to ecFlow server at {self.host}:{self.port}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        try:
+            logger.info(f"Loading suite '{self.suite_name}' to server.")
             client.load(defs)
+        except Exception as e:
+            msg = f"Failed to load suite definition to ecFlow server at {self.host}:{self.port}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        try:
+            logger.info(f"Beginning suite '{self.suite_name}'.")
             client.begin_suite(self.suite_name)
-        except Exception as exc:
-            raise RuntimeError(f"Failed to connect to ecFlow server at {self.host}:{self.port} — {exc}") from exc
+        except Exception as e:
+            msg = f"Failed to begin suite '{self.suite_name}' on ecFlow server: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e

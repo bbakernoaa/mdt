@@ -225,6 +225,7 @@ class PrefectEngine(Engine):
                 # We will use Prefect's `.with_options` to inject standard Dask resources.
                 # If target_cluster is None, default to "COMPUTE"
                 res_key = target_cluster.upper() if target_cluster else "COMPUTE"
+                logger.debug(f"Routing task '{node_id}' to cluster resource: {res_key}")
 
                 # Route the task to the specific worker pool via Dask Resource Annotation
                 with dask.annotate(resources={res_key: 1}):
@@ -247,8 +248,14 @@ class PrefectEngine(Engine):
                         target_name = node_data.get("target_name")
 
                         # Resolve node IDs from the actual predecessors in the DAG
-                        source_node_id = next((p for p in predecessors if source_name and p.endswith(f"_{source_name}")), None)
-                        target_node_id = next((p for p in predecessors if target_name and p.endswith(f"_{target_name}")), None)
+                        # We look for nodes where the 'name' attribute matches the requested source/target names
+                        source_node_id = next((p for p in predecessors if self.dag.nodes[p].get("name") == source_name), None)
+                        target_node_id = next((p for p in predecessors if self.dag.nodes[p].get("name") == target_name), None)
+
+                        if not source_node_id or not target_node_id:
+                            logger.error(
+                                f"Failed to resolve predecessors for pairing '{node_id}'. Source: {source_node_id}, Target: {target_node_id}"
+                            )
 
                         future = p_pair_data.submit(
                             name=node_data["name"],
@@ -307,6 +314,7 @@ class PrefectEngine(Engine):
 
         # Setup Dask clusters and configure Prefect to use the central scheduler
         cluster = self._setup_dask_clusters()
+        logger.info(f"Central Dask Scheduler address: {cluster.scheduler_address}")
 
         # Execute the Prefect flow, explicitly overriding the task_runner with our central cluster
         logger.info("Starting Prefect flow execution...")
