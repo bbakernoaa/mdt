@@ -124,7 +124,6 @@ module = [
     "monet.*",
     "monet_stats.*",
     "monet_plots.*",
-    "xregrid.*",
     "networkx.*",
     "yaml.*",
     "dask.*",
@@ -134,9 +133,5 @@ module = [
     "ecflow.*",
     "pandas.*",
     "matplotlib.*",
-    "cartopy.*",
-    "hvplot.*",
-    "geoviews.*",
-    "holoviews.*",
 ]
 ignore_missing_imports = true

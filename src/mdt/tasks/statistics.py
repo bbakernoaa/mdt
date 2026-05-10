@@ -236,8 +236,8 @@ def _execute_metric(
         try:
             sig = inspect.signature(func)
             if "weights" in sig.parameters:
-                w = data[weights] if isinstance(weights, str) else weights
-                return cast(pd.Series, func(obs, mod, weights=w, **call_kwargs))
+                weights_val = data[weights] if isinstance(weights, str) else weights
+                return cast(pd.Series, func(obs, mod, weights=weights_val, **call_kwargs))
         except (ValueError, TypeError):
             pass
 
