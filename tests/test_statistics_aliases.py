@@ -1,7 +1,6 @@
 import sys
 import types
 
-
 # MockModule for statistics aliases testing
 class MockModule:
     """Mock module for testing metric discovery."""
@@ -13,14 +12,13 @@ class MockModule:
         self.stats.rmse = "METRIC_RMSE"
 
 
-mock_monet_stats = MockModule()
-sys.modules["monet_stats"] = mock_monet_stats
-
-from mdt.tasks.statistics import _find_metric  # noqa: E402
-
-
-def test_find_metric_aliases():
+def test_find_metric_aliases(mocker):
     """Test that find_metric correctly identifies aliases like BIAS."""
+    mock_monet_stats = MockModule()
+    mocker.patch.dict(sys.modules, {"monet_stats": mock_monet_stats})
+
+    from mdt.tasks.statistics import _find_metric
+
     # Test case-insensitive match (aliased to mb)
     metric = _find_metric(mock_monet_stats, "MB")
     assert metric == "METRIC_MB"
@@ -35,5 +33,6 @@ def test_find_metric_aliases():
 
 
 if __name__ == "__main__":
-    test_find_metric_aliases()
-    print("All tests passed!")
+    # Manual run support if needed, but intended for pytest
+    import pytest
+    pytest.main([__file__])
