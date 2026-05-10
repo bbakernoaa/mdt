@@ -76,9 +76,9 @@ def load_data(
                 e,
             )
             # Fallback path: strip the VirtualiZarr-specific keys
-            fallback_kwargs = {
-                k: v for k, v in kwargs.items() if k not in ["use_virtualizarr", "virtualizarr_backend", "store_path", "icechunk_repo"]
-            }
+            vz_keys = ["use_virtualizarr", "virtualizarr_backend", "store_path", "icechunk_repo"]
+            fallback_kwargs = {k: v for k, v in kwargs.items() if k not in vz_keys}
+            logger.info("Retrying standard monetio.load with kwargs: %s", fallback_kwargs)
             ds = monetio.load(dataset_type, **fallback_kwargs)
             msg = f"Loaded dataset '{name}' (VirtualiZarr fallback used)."
             ds = update_history(ds, msg)

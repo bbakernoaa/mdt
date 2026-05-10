@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Union, cast
+from typing import Any, Dict, Union
 
 import pandas as pd
 import xarray as xr
@@ -83,12 +83,16 @@ def _find_plot_class(plot_type: str) -> Any:
 
     class_name = mapping.get(plot_type.lower())
     if class_name and hasattr(monet_plots, class_name):
-        return getattr(monet_plots, class_name)
+        cls = getattr(monet_plots, class_name)
+        logger.debug(f"Found plot class '{class_name}' for type '{plot_type}' via mapping.")
+        return cls
 
     # Fallback: Try to find a class that matches the plot_type string (case-insensitive)
     for attr in dir(monet_plots):
         if attr.lower() == plot_type.lower() or attr.lower() == f"{plot_type.lower()}plot":
-            return getattr(monet_plots, attr)
+            cls = getattr(monet_plots, attr)
+            logger.debug(f"Found plot class '{attr}' for type '{plot_type}' via fallback search.")
+            return cls
 
     raise ValueError(f"Could not find a plot class in monet_plots for type: '{plot_type}'")
 
@@ -107,14 +111,9 @@ def _generate_static_plot(
         if not callable(plot_class):
             raise ValueError(f"Discovered plot type '{plot_type}' is not a valid callable class.")
 
-        # Some plots expect DataFrames (TimeSeries, Taylor), others expect Xarray (Spatial)
-        # We try to provide the expected format by default but allow the plot class to handle it.
-        # Based on monet-plots API, we use .to_dataframe() if it looks like a tabular plot.
-        if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
-            # Use cast to Any to avoid "Series[Any]" not callable error
-            data = cast(Any, input_data).to_dataframe()
-        else:
-            data = input_data
+        # MDT Architecture Rule: Data remains in its native format (Xarray) during orchestration.
+        # Plot classes in monet-plots are responsible for any internal data conversions.
+        data = input_data
 
         # Filter kwargs: separate constructor args from plot() args
         # For now, we assume most kwargs can go to both, but we MUST exclude 'savename'
@@ -153,11 +152,9 @@ def _generate_interactive_plot(
         if not callable(plot_class):
             raise ValueError(f"Discovered plot type '{plot_type}' is not a valid callable class.")
 
-        if plot_type.lower() in ["timeseries", "taylor", "scatter"] and hasattr(input_data, "to_dataframe"):
-            # Use cast to Any to avoid "Series[Any]" not callable error
-            data = cast(Any, input_data).to_dataframe()
-        else:
-            data = input_data
+        # MDT Architecture Rule: Data remains in its native format (Xarray) during orchestration.
+        # Plot classes in monet-plots are responsible for any internal data conversions.
+        data = input_data
 
         plot_obj = plot_class(data, **kwargs)
 
