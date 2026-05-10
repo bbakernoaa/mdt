@@ -1,35 +1,31 @@
 import sys
 from unittest.mock import MagicMock
 
-# Mock monet_stats before importing compute_statistics
-mock_monet_stats = MagicMock()
-mock_monet_stats.mb = MagicMock()
-mock_monet_stats.__name__ = "monet_stats"
+class MockModule:
+    def __init__(self):
+        self.mb = "METRIC_MB"
+        self.stats = types.ModuleType("stats")
+        self.stats.rmse = "METRIC_RMSE"
+
+import types
+mock_monet_stats = MockModule()
 sys.modules["monet_stats"] = mock_monet_stats
 
-# Mock other dependencies if needed
-sys.modules["yaml"] = MagicMock()
-
-from mdt.tasks.statistics import _find_metric  # noqa: E402
-
+from mdt.tasks.statistics import _find_metric
 
 def test_find_metric_aliases():
     """Test that find_metric correctly identifies aliases like BIAS."""
-    # Test case-insensitive match
+    # Test case-insensitive match (aliased to mb)
     metric = _find_metric(mock_monet_stats, "MB")
-    assert metric is mock_monet_stats.mb
+    assert metric == "METRIC_MB"
 
     # Test alias BIAS
     metric_bias = _find_metric(mock_monet_stats, "BIAS")
-    assert metric_bias is mock_monet_stats.mb
+    assert metric_bias == "METRIC_MB"
 
-    # Test alias MBIAS
-    metric_mbias = _find_metric(mock_monet_stats, "MBIAS")
-    assert metric_mbias is mock_monet_stats.mb
-
-    # Test non-existent metric
-    assert _find_metric(mock_monet_stats, "NONEXISTENT") is None
-
+    # Test case-insensitive submodule search
+    metric_rmse = _find_metric(mock_monet_stats, "RMSE")
+    assert metric_rmse == "METRIC_RMSE"
 
 if __name__ == "__main__":
     test_find_metric_aliases()

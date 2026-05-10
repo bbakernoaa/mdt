@@ -242,25 +242,27 @@ class PrefectEngine(Engine):
                         task_outputs[node_id] = future
 
                     elif task_type == "pair_data":
-                        # Find which predecessor is source and which is target
-                        # Based on our DAG builder, predecessors are the load nodes for source and target
-                        source_node = None
-                        target_node = None
-                        pairing_name = node_data["name"]
-                        pairing_details = self.config.pairing.get(pairing_name, {})
-                        source_name = pairing_details.get("source")
-                        target_name = pairing_details.get("target")
+                        # Resolve source and target node IDs from DAG metadata
+                        source_name = node_data.get("source_name")
+                        target_name = node_data.get("target_name")
 
-                        if source_name:
-                            source_node = f"load_{source_name}"
-                        if target_name:
-                            target_node = f"load_{target_name}"
+                        # We use the logical name to find the actual node ID in the graph
+                        # This matches the logic in DAGBuilder._find_node
+                        def find_pred_id(logical_name: str) -> str | None:
+                            for pred in predecessors:
+                                # Predecessor IDs are like 'load_merra2', 'pair_x', etc.
+                                if pred.endswith(f"_{logical_name}"):
+                                    return pred
+                            return None
+
+                        source_node_id = find_pred_id(source_name) if source_name else None
+                        target_node_id = find_pred_id(target_name) if target_name else None
 
                         future = p_pair_data.submit(
                             name=node_data["name"],
                             method=node_data["method"],
-                            source_data=task_outputs.get(source_node) if source_node else None,
-                            target_data=task_outputs.get(target_node) if target_node else None,
+                            source_data=task_outputs.get(source_node_id) if source_node_id else None,
+                            target_data=task_outputs.get(target_node_id) if target_node_id else None,
                             kwargs=node_data["kwargs"],
                         )
                         task_outputs[node_id] = future

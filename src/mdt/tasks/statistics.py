@@ -117,7 +117,7 @@ def _find_metric(module: Any, metric_name: str) -> Any:
     # 4. Search in sub-module
     if hasattr(module, "stats"):
         for attr in dir(module.stats):
-            if attr.lower() == metric_name.lower():
+            if attr.lower() == target_name.lower():
                 return getattr(module.stats, attr)
 
     return None
