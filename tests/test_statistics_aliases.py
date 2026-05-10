@@ -1,6 +1,7 @@
 import sys
 import types
 
+
 # MockModule for statistics aliases testing
 class MockModule:
     """Mock module for testing metric discovery."""
@@ -35,4 +36,5 @@ def test_find_metric_aliases(mocker):
 if __name__ == "__main__":
     # Manual run support if needed, but intended for pytest
     import pytest
+
     pytest.main([__file__])

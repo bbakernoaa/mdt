@@ -1,7 +1,6 @@
 import sys
 from unittest.mock import MagicMock
 
-import numpy as np
 import pandas as pd  # noqa: F401
 import xarray as xr
 
@@ -49,4 +48,5 @@ def test_calculate_reduction_kwargs_filtering(mocker):
 
 if __name__ == "__main__":
     import pytest
+
     pytest.main([__file__])
