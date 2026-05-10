@@ -246,17 +246,9 @@ class PrefectEngine(Engine):
                         source_name = node_data.get("source_name")
                         target_name = node_data.get("target_name")
 
-                        # We use the logical name to find the actual node ID in the graph
-                        # This matches the logic in DAGBuilder._find_node
-                        def find_pred_id(logical_name: str) -> str | None:
-                            for pred in predecessors:
-                                # Predecessor IDs are like 'load_merra2', 'pair_x', etc.
-                                if pred.endswith(f"_{logical_name}"):
-                                    return pred
-                            return None
-
-                        source_node_id = find_pred_id(source_name) if source_name else None
-                        target_node_id = find_pred_id(target_name) if target_name else None
+                        # Resolve node IDs from the actual predecessors in the DAG
+                        source_node_id = next((p for p in predecessors if source_name and p.endswith(f"_{source_name}")), None)
+                        target_node_id = next((p for p in predecessors if target_name and p.endswith(f"_{target_name}")), None)
 
                         future = p_pair_data.submit(
                             name=node_data["name"],

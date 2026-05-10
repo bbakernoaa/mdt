@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 

@@ -1,17 +1,23 @@
 import sys
-from unittest.mock import MagicMock
+import types
 
+
+# MockModule for statistics aliases testing
 class MockModule:
+    """Mock module for testing metric discovery."""
+
     def __init__(self):
+        """Initialize mock metrics."""
         self.mb = "METRIC_MB"
         self.stats = types.ModuleType("stats")
         self.stats.rmse = "METRIC_RMSE"
 
-import types
+
 mock_monet_stats = MockModule()
 sys.modules["monet_stats"] = mock_monet_stats
 
-from mdt.tasks.statistics import _find_metric
+from mdt.tasks.statistics import _find_metric  # noqa: E402
+
 
 def test_find_metric_aliases():
     """Test that find_metric correctly identifies aliases like BIAS."""
@@ -26,6 +32,7 @@ def test_find_metric_aliases():
     # Test case-insensitive submodule search
     metric_rmse = _find_metric(mock_monet_stats, "RMSE")
     assert metric_rmse == "METRIC_RMSE"
+
 
 if __name__ == "__main__":
     test_find_metric_aliases()
