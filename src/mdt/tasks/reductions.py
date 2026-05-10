@@ -100,19 +100,23 @@ def calculate_reduction(
 
         # Fallback if discovery fails but reduction is forced
         if lat_dim is None:
-            lat_dim = dims[0]
+            lat_dim = dims[0] if dims else "lat"
         if lon_dim is None:
-            lon_dim = dims[1] if len(dims) > 1 else dims[0]
+            lon_dim = dims[1] if len(dims) > 1 else (dims[0] if dims else "lon")
 
         # Step A: Perform the weighted spatial mean
-        result = monet_stats.weighted_spatial_mean(obj, lat_dim=lat_dim, lon_dim=lon_dim, **kwargs)
+        # Filter kwargs to avoid duplicate arguments
+        spatial_kwargs = {k: v for k, v in kwargs.items() if k not in ["lat_dim", "lon_dim"]}
+        result = monet_stats.weighted_spatial_mean(obj, lat_dim=lat_dim, lon_dim=lon_dim, **spatial_kwargs)
 
         # Step B: Dimension Drop Fix - Reduce remaining dimensions if necessary
         remaining_dims = [d for d in dims if d not in [lat_dim, lon_dim]]
         if remaining_dims:
             logger.info("Reducing remaining non-spatial dimensions: %s", remaining_dims)
             reduction_func = getattr(result, method)
-            result = reduction_func(dim=remaining_dims, **kwargs)
+            # Filter kwargs for standard xarray reduction
+            reduction_kwargs = {k: v for k, v in kwargs.items() if k not in ["lat_dim", "lon_dim"]}
+            result = reduction_func(dim=remaining_dims, **reduction_kwargs)
 
         method_str = f"{method} (area-weighted via monet-stats)"
     else:

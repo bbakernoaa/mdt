@@ -129,7 +129,12 @@ class PrefectEngine(Engine):
             if mode == "local":
                 logger.info(f"Scaling local workers for '{cluster_name}'")
                 # Scale the central cluster and explicitly assign resources
+                # We use scale(cores=...) or similar if possible, but scale(workers)
+                # is standard for LocalCluster.
                 primary_cluster.scale(workers)
+                # Dask workers started via scale() on LocalCluster might not automatically
+                # get the resource tag. For LocalCluster we usually set it in the constructor.
+                # However, for multi-cluster we rely on the resources dict if possible.
             else:
                 logger.info(f"Setting up HPC cluster '{cluster_name}' (mode: {mode}) connecting to {scheduler_address}")
 
@@ -310,6 +315,20 @@ class PrefectEngine(Engine):
         cluster = self._setup_dask_clusters()
 
         # Execute the Prefect flow, explicitly overriding the task_runner with our central cluster
-        results: Dict[str, Any] = mdt_flow.with_options(task_runner=cast(Any, DaskTaskRunner(address=cluster.scheduler_address)))()
+        logger.info("Starting Prefect flow execution...")
+        task_futures: Dict[str, Any] = mdt_flow.with_options(task_runner=cast(Any, DaskTaskRunner(address=cluster.scheduler_address)))()
 
-        return results
+        # Requirement: Ensure the CLI waits for task completion.
+        # Prefect .submit() returns futures. We need to wait for them.
+        logger.info("Waiting for tasks to complete...")
+        final_results = {}
+        for node_id, future in task_futures.items():
+            try:
+                # This will block until the specific task is done.
+                final_results[node_id] = future.result()
+            except Exception as e:
+                logger.error(f"Task {node_id} failed: {e}")
+                final_results[node_id] = e
+
+        logger.info("All tasks completed.")
+        return final_results
