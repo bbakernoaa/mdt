@@ -50,13 +50,15 @@ _DISPATCH_BLOCKS: dict[str, str] = {
     ),
     "pair_data": (
         "    from mdt.tasks.pairing import pair_data\n"
-        "    pair_data(name=task_name, method=kwargs.pop('method', ''),\n"
+        "    pair_data(name=task_name, method=method,\n"
         "             source_data=None, target_data=None, kwargs=kwargs)"
     ),
     "combine_paired_data": (
         "    from mdt.tasks.pairing import combine_paired_data\n"
-        "    combine_paired_data(paired_data=kwargs.pop('paired_data', {}),\n"
-        "                        dim=kwargs.pop('dim', 'model'))"
+        "    paired_data_inputs = {}\n"
+        "    for source in sources:\n"
+        "        paired_data_inputs[source] = None  # In ecFlow, data passing is via disk/db\n"
+        "    combine_paired_data(paired_data=paired_data_inputs, dim=dim)"
     ),
     "compute_statistics": (
         "    from mdt.tasks.statistics import compute_statistics\n"
@@ -97,6 +99,9 @@ def _build_wrapper_script(node_id: str) -> str:  # noqa: ARG001
         "    kwargs = json.loads('%TASK_KWARGS%')",
         "    metrics = json.loads('%METRICS%')",
         '    plot_type = "%PLOT_TYPE%"',
+        '    method = "%METHOD%"',
+        '    dim = "%DIM%"',
+        "    sources = json.loads('%SOURCES%')",
         "",
         "    # --- dispatch to the correct MDT task function ---",
     ]
@@ -226,6 +231,9 @@ class EcFlowEngine(Engine):
             task.add_variable("TASK_KWARGS", json.dumps(data.get("kwargs") or {}))
             task.add_variable("METRICS", json.dumps(data.get("metrics") or []))
             task.add_variable("PLOT_TYPE", data.get("plot_type") or "")
+            task.add_variable("METHOD", data.get("method") or "")
+            task.add_variable("DIM", data.get("dim") or "")
+            task.add_variable("SOURCES", json.dumps(data.get("sources") or []))
             task.add_variable("CLUSTER", data.get("cluster") or "")
 
             if task_type == "load_data":

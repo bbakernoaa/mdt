@@ -67,3 +67,92 @@ def test_example_configs_cli_dry_run(mock_get_engine, config_path):
 
     mock_get_engine.assert_called_with("prefect")
     mock_engine_instance.execute.assert_called_once()
+
+
+@patch("mdt.engine_registry.EngineRegistry.get_engine")
+@pytest.mark.parametrize("config_path", get_example_configs())
+def test_example_configs_cli_dry_run_ecflow(mock_get_engine, config_path, monkeypatch):
+    """Simulate a CLI 'run' of the examples with a mocked ecflow engine."""
+    import sys
+    import types
+
+    from mdt.cli import main
+
+    # Mock ecflow module
+    fake_ecflow = types.ModuleType("ecflow")
+    fake_ecflow.Defs = MagicMock()
+    fake_ecflow.Suite = MagicMock()
+    fake_ecflow.Family = MagicMock()
+    fake_ecflow.Task = MagicMock()
+    fake_ecflow.Client = MagicMock()
+    monkeypatch.setitem(sys.modules, "ecflow", fake_ecflow)
+
+    # Mock the engine class and its execution
+    mock_engine_instance = MagicMock()
+    mock_engine_instance.execute.return_value = {"status": "ok"}
+    mock_engine_cls = MagicMock(return_value=mock_engine_instance)
+    mock_get_engine.return_value = mock_engine_cls
+
+    test_args = ["mdt", "run", config_path, "--orchestrator", "ecflow"]
+    with patch.object(sys, "argv", test_args):
+        try:
+            main()
+        except SystemExit as e:
+            assert e.code == 0
+
+    mock_get_engine.assert_called_with("ecflow")
+    mock_engine_instance.execute.assert_called_once()
+
+
+@pytest.mark.parametrize("config_path", get_example_configs())
+def test_example_configs_ecflow_full_translation(config_path, monkeypatch):
+    """Verify that all example configurations can be fully translated into an ecFlow suite."""
+    import sys
+    import types
+
+    from mdt.ecflow_engine import EcFlowEngine
+
+    # Mock ecflow module
+    fake_ecflow = types.ModuleType("ecflow")
+    fake_ecflow.Defs = MagicMock()
+    fake_ecflow.Suite = MagicMock()
+    fake_ecflow.Family = MagicMock()
+    fake_ecflow.Task = MagicMock()
+    fake_ecflow.Client = MagicMock()
+    monkeypatch.setitem(sys.modules, "ecflow", fake_ecflow)
+
+    # Load config and build DAG
+    config = ConfigParser(config_path)
+    builder = DAGBuilder(config)
+    dag = builder.build()
+
+    # Initialize Engine
+    engine = EcFlowEngine(dag, config)
+
+    # 1. Test Suite Building
+    defs = engine.build_suite()
+    assert defs is not None
+
+    # 2. Test Wrapper Generation (mocking file IO)
+    with patch("pathlib.Path.mkdir"):
+        with patch("pathlib.Path.open", MagicMock()):
+            wrapper_paths = engine.generate_task_wrappers()
+            assert len(wrapper_paths) == len(dag.nodes)
+
+
+@pytest.mark.parametrize("config_path", get_example_configs())
+def test_example_configs_prefect_flow_construction(config_path, monkeypatch):
+    """Verify that all example configurations can successfully initialize the Prefect engine."""
+    from mdt.engine import PrefectEngine
+
+    # Load config and build DAG
+    config = ConfigParser(config_path)
+    builder = DAGBuilder(config)
+    dag = builder.build()
+
+    # Initialize Engine
+    engine = PrefectEngine(dag, config)
+
+    # Verify that the engine is correctly initialized with the DAG
+    assert engine.dag == dag
+    assert engine.config == config
