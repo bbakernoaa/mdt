@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Union, cast
+from typing import Any, Dict, Optional, Union, cast
 
 import pandas as pd
 import xarray as xr
@@ -18,6 +18,7 @@ def pair_data(
     source_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
     target_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
     kwargs: Dict[str, Any],
+    mask: Optional[str] = None,
 ) -> Union[xr.Dataset, xr.DataArray, pd.DataFrame]:
     """
     Dynamically pair two datasets using monet.
@@ -34,6 +35,10 @@ def pair_data(
         The target data object or grid (typically observations).
     kwargs : dict
         Additional keyword arguments for the pairing function (e.g., 'interp_time', 'suffix').
+    mask : str, optional
+        Name of a geographic region mask to apply after pairing. When provided,
+        ``monet.util.mask.query_mask`` is called to add a region label variable
+        to the paired dataset. Default is None (no masking).
 
     Returns
     -------
@@ -44,11 +49,16 @@ def pair_data(
     ------
     ImportError
         If required pairing backend is not installed.
+    ValueError
+        If the mask name is not recognized by ``monet.util.mask.get_mask``.
 
     Examples
     --------
     >>> paired = pair_data(
     ...     "my_pairing", "bilinear", model_ds, obs_df, {"interp_time": True}
+    ... )
+    >>> paired_masked = pair_data(
+    ...     "my_pairing", "bilinear", model_ds, obs_df, {"interp_time": True}, mask="land"
     ... )
     """
     logger.info("Pairing data '%s' using method '%s'", name, method)
@@ -56,10 +66,27 @@ def pair_data(
     import monet
 
     try:
+        # Drop UGRID 'mesh' variable if present — it causes MergeError in xr.merge
+        # when monet tries to merge paired model data with observations.
+        # This is a known incompatibility between UGRID-convention datasets and xarray.merge.
+        if isinstance(target_data, xr.Dataset) and "mesh" in target_data:
+            target_data = target_data.drop_vars("mesh")
+
         # Use the unified monet.pair interface
         # This handles both Xarray-to-Xarray and Xarray-to-DataFrame pairing,
         # maintaining Aero Protocol (laziness).
         paired_data = monet.util.combinetool.pair(source_data, target_data, method=method, **kwargs)
+
+        # Apply region mask if configured
+        if mask is not None:
+            try:
+                from monet.util.mask import query_mask
+
+                paired_data = query_mask(paired_data, mask)
+                logger.info("Applied region mask '%s' to paired data '%s'", mask, name)
+            except Exception as e:
+                logger.error("Failed to apply mask '%s' to '%s': %s", mask, name, e)
+                raise
 
         # Provenance Tracking
         msg = f"Paired using method '{method}' with params {kwargs}."

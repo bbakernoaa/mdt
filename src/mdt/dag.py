@@ -146,16 +146,19 @@ class DAGBuilder:
 
             target_cluster = details.get("cluster", default_cluster)
             logger.debug(f"Adding pairing node: {node_id} (source={source_node}, target={target_node}, cluster={target_cluster})")
-            self.graph.add_node(
-                node_id,
-                task_type="pair_data",
-                name=name,
-                method=details.get("method", "interpolate"),
-                cluster=target_cluster,
-                kwargs=details.get("kwargs", {}),
-                source_name=source,
-                target_name=target,
-            )
+            mask = details.get("mask")
+            node_attrs = {
+                "task_type": "pair_data",
+                "name": name,
+                "method": details.get("method", "interpolate"),
+                "cluster": target_cluster,
+                "kwargs": details.get("kwargs", {}),
+                "source_name": source,
+                "target_name": target,
+            }
+            if mask:
+                node_attrs["mask"] = mask
+            self.graph.add_node(node_id, **node_attrs)
 
             logger.debug(f"Adding edge: {source_node} -> {node_id}")
             self.graph.add_edge(source_node, node_id)
@@ -231,15 +234,20 @@ class DAGBuilder:
                 continue
 
             target_cluster = details.get("cluster", default_cluster)
+            kwargs = details.get("kwargs", {})
+            regions = kwargs.get("regions") if kwargs else None
+
             logger.debug(f"Adding statistics node: {node_id} (input={target_parent}, cluster={target_cluster})")
-            self.graph.add_node(
-                node_id,
-                task_type="compute_statistics",
-                name=name,
-                metrics=details.get("metrics", []),
-                cluster=target_cluster,
-                kwargs=details.get("kwargs", {}),
-            )
+            node_attrs: dict[str, Any] = {
+                "task_type": "compute_statistics",
+                "name": name,
+                "metrics": details.get("metrics", []),
+                "cluster": target_cluster,
+                "kwargs": kwargs,
+            }
+            if regions:
+                node_attrs["regions"] = list(regions)
+            self.graph.add_node(node_id, **node_attrs)
 
             logger.debug(f"Adding edge: {target_parent} -> {node_id}")
             self.graph.add_edge(target_parent, node_id)
@@ -267,15 +275,20 @@ class DAGBuilder:
                 continue
 
             target_cluster = details.get("cluster", default_cluster)
+            kwargs = details.get("kwargs", {})
+            regions = kwargs.get("regions") if kwargs else None
+
             logger.debug(f"Adding plotting node: {node_id} (input={target_parent}, cluster={target_cluster})")
-            self.graph.add_node(
-                node_id,
-                task_type="generate_plot",
-                name=name,
-                plot_type=details.get("type", "spatial"),
-                cluster=target_cluster,
-                kwargs=details.get("kwargs", {}),
-            )
+            node_attrs: dict[str, Any] = {
+                "task_type": "generate_plot",
+                "name": name,
+                "plot_type": details.get("type", "spatial"),
+                "cluster": target_cluster,
+                "kwargs": kwargs,
+            }
+            if regions:
+                node_attrs["regions"] = list(regions)
+            self.graph.add_node(node_id, **node_attrs)
 
             logger.debug(f"Adding edge: {target_parent} -> {node_id}")
             self.graph.add_edge(target_parent, node_id)

@@ -1,10 +1,50 @@
 import logging
+import re
 from typing import Any, Dict, Union
 
 import pandas as pd
 import xarray as xr
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Region filtering helpers
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_region_name(region: str) -> str:
+    """Replace characters that are not alphanumeric, hyphens, or periods with underscores."""
+    return re.sub(r"[^a-zA-Z0-9\-.]", "_", region)
+
+
+def _find_region_variable(data):
+    """Find the region label variable in the dataset (added by query_mask)."""
+    if not isinstance(data, xr.Dataset):
+        raise ValueError("Region filtering requires an xarray Dataset.")
+    for var in data.data_vars:
+        if data[var].dtype == object or data[var].dtype.kind in ("U", "S"):
+            return var
+    raise ValueError(
+        "No region label variable found in dataset. "
+        "Ensure a mask is applied during pairing."
+    )
+
+
+def _filter_by_region(data, region_var, region_name):
+    """Filter dataset to only points matching the given region."""
+    mask = data[region_var] == region_name
+    return data.where(mask, drop=True)
+
+
+def _is_empty(data):
+    """Check if filtered dataset has no data points."""
+    if isinstance(data, xr.Dataset):
+        for var in data.data_vars:
+            if data[var].size == 0:
+                return True
+            return False
+    return len(data) == 0
 
 
 def generate_plot(
@@ -19,6 +59,9 @@ def generate_plot(
 
     Track A (Publication): matplotlib + cartopy.
     Track B (Exploration): hvplot / geoviews.
+
+    When a ``regions`` list is present in kwargs, produces one plot per region
+    by filtering the input data and substituting ``{region}`` in the savename.
 
     Parameters
     ----------
@@ -35,13 +78,47 @@ def generate_plot(
 
     Returns
     -------
-    object
-        The plot object (Matplotlib figure or HoloViews object).
+    object or list
+        The plot object (Matplotlib figure or HoloViews object), or a list of
+        plot objects when regions are specified.
 
     Examples
     --------
     >>> fig = generate_plot("my_plot", "spatial", ds, {"savename": "spatial.png"}, track="A")
     """
+    regions = kwargs.pop("regions", None)
+
+    if regions:
+        savename_template = kwargs.get("savename", f"{name}.png")
+        if "{region}" not in savename_template:
+            raise ValueError(
+                f"Plot '{name}': savename must contain '{{region}}' placeholder "
+                f"when regions are specified."
+            )
+        region_var = _find_region_variable(input_data)
+        results = []
+        for region in regions:
+            filtered = _filter_by_region(input_data, region_var, region)
+            if _is_empty(filtered):
+                logger.warning("Plot '%s': region '%s' has no data, skipping.", name, region)
+                continue
+            region_savename = savename_template.replace("{region}", _sanitize_region_name(region))
+            region_kwargs = {**kwargs, "savename": region_savename}
+            result = _generate_single_plot(name, plot_type, filtered, region_kwargs, track)
+            results.append(result)
+        return results
+    else:
+        return _generate_single_plot(name, plot_type, input_data, kwargs, track)
+
+
+def _generate_single_plot(
+    name: str,
+    plot_type: str,
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame, Dict[str, Any]],
+    kwargs: Dict[str, Any],
+    track: str = "A",
+) -> Any:
+    """Generate a single plot (dispatches to static or interactive track)."""
     logger.info("Generating plot '%s' [Track %s] of type: %s", name, track, plot_type)
 
     if track == "A":
@@ -79,6 +156,13 @@ def _find_plot_class(plot_type: str) -> Any:
         "scatter": "ScatterPlot",
         "timeseries": "TimeSeriesPlot",
         "taylor": "TaylorDiagramPlot",
+        "spatial_bias_scatter": "SpatialBiasScatterPlot",
+        "radar": "RadarPlot",
+        "soccer": "SoccerPlot",
+        "timeseriesstat": "TimeSeriesStatsPlot",
+        "diurnal_error": "DiurnalErrorPlot",
+        "conditional_bias": "ConditionalBiasPlot",
+        "kde": "KDEPlot",
     }
 
     class_name = mapping.get(plot_type.lower())
@@ -86,6 +170,21 @@ def _find_plot_class(plot_type: str) -> Any:
         cls = getattr(monet_plots, class_name)
         logger.debug(f"Found plot class '{class_name}' for type '{plot_type}' via mapping.")
         return cls
+
+    # Try importing from submodules directly (some plots aren't in __init__)
+    if class_name:
+        try:
+            from monet_plots.plots import radar, soccer, timeseries
+            submodule_map = {
+                "RadarPlot": radar.RadarPlot,
+                "SoccerPlot": soccer.SoccerPlot,
+                "TimeSeriesStatsPlot": timeseries.TimeSeriesStatsPlot,
+            }
+            if class_name in submodule_map:
+                logger.debug(f"Found plot class '{class_name}' via submodule import.")
+                return submodule_map[class_name]
+        except ImportError:
+            pass
 
     # Fallback: Try to find a class that matches the plot_type string (case-insensitive)
     for attr in dir(monet_plots):
@@ -104,6 +203,10 @@ def _generate_static_plot(
     kwargs: Dict[str, Any],
 ) -> Any:
     """Track A: Static plotting with monet-plots (Matplotlib + Cartopy)."""
+    import matplotlib
+    matplotlib.use("agg")  # Non-interactive backend for thread safety
+    import matplotlib.pyplot as plt
+
     savename = kwargs.pop("savename", f"{name}.png")
 
     try:
@@ -111,19 +214,127 @@ def _generate_static_plot(
         if not callable(plot_class):
             raise ValueError(f"Discovered plot type '{plot_type}' is not a valid callable class.")
 
-        # MDT Architecture Rule: Data remains in its native format (Xarray) during orchestration.
-        # Plot classes in monet-plots are responsible for any internal data conversions.
         data = input_data
 
-        # Filter kwargs: separate constructor args from plot() args
-        # For now, we assume most kwargs can go to both, but we MUST exclude 'savename'
-        # which we already popped.
-        plot_obj = plot_class(data, **kwargs)
+        # Handle multi-column overlay: 'columns' plots multiple lines on one axis
+        # Supports both list format: ["t2m", "TMP_2maboveground"]
+        # and dict format: {col_name: {label: "...", color: "..."}, ...}
+        columns_raw = kwargs.pop("columns", None)
+        # Also support single 'column' for backward compatibility
+        if columns_raw is None and "column" in kwargs:
+            columns_raw = [kwargs.pop("column")]
 
-        # Dispatch to plot() method if it exists (for standard Matplotlib rendering)
+        # Normalize to list of (col_name, label, color) tuples
+        columns_spec = []
+        if isinstance(columns_raw, dict):
+            for col_name, opts in columns_raw.items():
+                if isinstance(opts, dict):
+                    columns_spec.append((col_name, opts.get("label", col_name), opts.get("color", None)))
+                else:
+                    columns_spec.append((col_name, col_name, None))
+        elif isinstance(columns_raw, list):
+            for col in columns_raw:
+                columns_spec.append((col, col, None))
+
+        if columns_spec and len(columns_spec) > 1:
+            # Multi-line overlay: create one plot with first variable, then overlay others
+            constructor_keys = {"x", "plotargs", "fillargs", "title", "ylabel", "label"}
+            constructor_kwargs = {k: v for k, v in kwargs.items() if k in constructor_keys}
+            plot_kwargs = {k: v for k, v in kwargs.items() if k not in constructor_keys}
+
+            # Create the plot with the first column
+            first_col, first_label, first_color = columns_spec[0]
+            # Only pass plotargs to plot classes that support it (TimeSeriesPlot)
+            init_kwargs = {"y": first_col, "label": first_label}
+            if first_color and hasattr(plot_class, '_plot_xarray'):
+                # TimeSeriesPlot uses plotargs for line styling
+                init_kwargs["plotargs"] = {"color": first_color}
+            plot_obj = plot_class(data, **init_kwargs, **constructor_kwargs)
+            if hasattr(plot_obj, "plot"):
+                plot_obj.plot(**plot_kwargs)
+
+            # Overlay additional columns directly on the same axes
+            import xarray as xr
+            for col, label, color in columns_spec[1:]:
+                if isinstance(data, xr.Dataset) and col in data:
+                    var_data = data[col]
+                    # Reduce to time dimension (mean over spatial dims)
+                    x_dim = constructor_kwargs.get("x", "time")
+                    dims_to_reduce = [d for d in var_data.dims if d != x_dim]
+                    if dims_to_reduce:
+                        mean_data = var_data.mean(dim=dims_to_reduce)
+                    else:
+                        mean_data = var_data
+
+                    plot_kw = {"label": label}
+                    if color:
+                        plot_kw["color"] = color
+
+                    # If variable has no time dimension (e.g., single forecast time),
+                    # broadcast as a constant line across the time axis
+                    if x_dim not in mean_data.dims:
+                        if x_dim in data.dims:
+                            const_val = float(mean_data.values)
+                            plot_obj.ax.axhline(y=const_val, linestyle="--", **plot_kw)
+                        else:
+                            continue
+                    else:
+                        # Drop NaN so matplotlib connects valid points
+                        mean_data = mean_data.dropna(x_dim)
+                        if len(mean_data) > 0:
+                            mean_data.plot(ax=plot_obj.ax, **plot_kw)
+
+            plot_obj.ax.legend()
+            plot_obj.fig.tight_layout()
+            plot_obj.save(savename)
+            logger.info("Saved Track A plot '%s' (%d lines) to %s", name, len(columns_spec), savename)
+
+            if hasattr(plot_obj, "close"):
+                plot_obj.close()
+
+            return plot_obj
+
+        # Single column (or no column specified)
+        if columns_spec and len(columns_spec) == 1:
+            kwargs["y"] = columns_spec[0][0]
+            if columns_spec[0][1] != columns_spec[0][0]:
+                kwargs["label"] = columns_spec[0][1]
+        elif "y" not in kwargs:
+            kwargs.pop("column", None)  # Remove if still present
+
+        # Separate kwargs into constructor args and plot() args.
+        # Include params for all supported plot classes:
+        # TimeSeriesPlot: x, y, plotargs, fillargs, title, ylabel, label
+        # TaylorDiagramPlot: col1, col2, label1, scale
+        # ScatterPlot: x, y, c, colorbar, title
+        # SpatialBiasScatterPlot: col1, col2, vmin, vmax, ncolors, fact, cmap
+        constructor_keys = {
+            "x", "y", "plotargs", "fillargs", "title", "ylabel", "label",
+            "col1", "col2", "label1", "scale", "c", "colorbar",
+            "vmin", "vmax", "ncolors", "fact", "cmap",
+            "obs_col", "mod_cols", "mod_col", "metrics", "metrics_data",
+            "bias_col", "error_col", "label_col", "metric", "goal", "criteria",
+            "modelvar", "obsvar", "gridobj", "ncolors", "discrete", "col", "row", "col_wrap", "size", "aspect",
+            "var1", "var2", "stat", "time_col", "second_dim",
+        }
+        constructor_kwargs = {k: v for k, v in kwargs.items() if k in constructor_keys}
+        plot_kwargs = {k: v for k, v in kwargs.items() if k not in constructor_keys}
+
+        # For spatial plots, reduce time dimension to mean (one value per station)
+        import xarray as xr
+        if isinstance(data, xr.Dataset) and "time" in data.dims and plot_type in ("spatial_bias_scatter", "spatial"):
+            data = data.mean(dim="time", skipna=True)
+
+        # If modelvar is specified, subset the dataset to only that variable
+        if isinstance(data, xr.Dataset) and "modelvar" in constructor_kwargs:
+            modelvar = constructor_kwargs["modelvar"]
+            if modelvar in data:
+                data = data[[modelvar]]
+
+        plot_obj = plot_class(data, **constructor_kwargs)
+
         if hasattr(plot_obj, "plot"):
-            # We pass kwargs again to plot() as many monet-plots use this pattern
-            plot_obj.plot(**kwargs)
+            plot_obj.plot(**plot_kwargs)
 
         plot_obj.save(savename)
         logger.info("Saved Track A plot '%s' to %s via monet-plots", name, savename)

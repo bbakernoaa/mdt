@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Union, cast
 import pandas as pd
 import xarray as xr
 
+from mdt.tasks.plotting import _filter_by_region, _find_region_variable, _is_empty
 from mdt.utils import discover_spatial_dims, update_history
 
 logger = logging.getLogger(__name__)
@@ -15,13 +16,17 @@ def compute_statistics(
     metrics: List[str],
     input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
     kwargs: Dict[str, Any],
-) -> Dict[str, Union[xr.Dataset, xr.DataArray, pd.Series]]:
+) -> Dict[str, Any]:
     """
     Compute statistics on paired data using monet-stats with Dask support.
 
     Adheres to the Aero Protocol by calling metrics directly on Xarray
     objects, allowing the backend (NumPy or Dask) to handle the data
     without forcing re-chunking or memory-intensive operations.
+
+    When a ``regions`` list is present in kwargs, computes metrics separately
+    for each region by filtering the input data and substituting ``{region}``
+    in the savename. Spaces in region names are replaced with underscores.
 
     Parameters
     ----------
@@ -37,19 +42,75 @@ def compute_statistics(
 
     Returns
     -------
-    Dict[str, Union[xr.Dataset, xr.DataArray, pd.Series]]
-        A dictionary mapping the computed metric names to their results.
+    Dict[str, Any]
+        When regions are specified, a dictionary mapping region names to their
+        per-region results dictionaries. Otherwise, a dictionary mapping metric
+        names to their computed results.
 
     Raises
     ------
     ImportError
         If monet-stats is not installed.
+    ValueError
+        If regions are specified but savename does not contain ``{region}``
+        placeholder, or if no region label variable is found in the dataset.
 
     Examples
     --------
     >>> metrics = ['rmse', 'mb']
     >>> kwargs = {'obs_var': 'obs', 'mod_var': 'mod', 'weights': 'w'}
     >>> results = compute_statistics('test_stats', metrics, ds, kwargs)
+    """
+    regions = kwargs.pop("regions", None)
+
+    if regions:
+        savename_template = kwargs.get("savename", "")
+        if "{region}" not in savename_template:
+            raise ValueError(
+                f"Statistics '{name}': savename must contain '{{region}}' placeholder "
+                f"when regions are specified."
+            )
+        region_var = _find_region_variable(input_data)
+        all_results = {}
+        for region in regions:
+            filtered = _filter_by_region(input_data, region_var, region)
+            if _is_empty(filtered):
+                logger.warning("Statistics '%s': region '%s' has no data, skipping.", name, region)
+                continue
+            region_savename = savename_template.replace("{region}", region.replace(" ", "_"))
+            region_kwargs = {**kwargs, "savename": region_savename}
+            region_kwargs.pop("regions", None)
+            results = _compute_single(name, metrics, filtered, region_kwargs)
+            all_results[region] = results
+        return all_results
+    else:
+        return _compute_single(name, metrics, input_data, kwargs)
+
+
+def _compute_single(
+    name: str,
+    metrics: List[str],
+    input_data: Union[xr.Dataset, xr.DataArray, pd.DataFrame],
+    kwargs: Dict[str, Any],
+) -> Dict[str, Union[xr.Dataset, xr.DataArray, pd.Series]]:
+    """
+    Compute statistics for a single dataset (no region filtering).
+
+    Parameters
+    ----------
+    name : str
+        The identifier for this statistics task.
+    metrics : List[str]
+        A list of metric names to compute.
+    input_data : xr.Dataset or xr.DataArray or pd.DataFrame
+        The data to compute metrics on.
+    kwargs : Dict[str, Any]
+        Additional keyword arguments for metric functions.
+
+    Returns
+    -------
+    Dict[str, Union[xr.Dataset, xr.DataArray, pd.Series]]
+        A dictionary mapping metric names to their results.
     """
     logger.info("Computing statistics '%s' for metrics: %s", name, metrics)
 
@@ -78,6 +139,12 @@ def compute_statistics(
                 raise
 
         logger.info("Successfully computed statistics '%s'", name)
+
+        # Save results to file if savename is specified
+        savename = kwargs.get("savename")
+        if savename:
+            _save_statistics(name, results, savename)
+
         return results
 
     except ImportError:
@@ -173,7 +240,7 @@ def _execute_metric(
     dim = kwargs.get("dim")
 
     # Filter out MDT-specific keys for the standard metric call
-    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights", "dim"]}
+    call_kwargs = {k: v for k, v in kwargs.items() if k not in ["obs_var", "mod_var", "weights", "dim", "savename"]}
 
     if isinstance(data, (xr.Dataset, xr.DataArray)):
         # 1. Extract Target Data
@@ -256,3 +323,55 @@ def _execute_metric(
             pass
 
     return cast(pd.Series, func(obs, mod, **call_kwargs))
+
+
+def _save_statistics(name: str, results: Dict[str, Any], savename: str) -> None:
+    """Save computed statistics to a file (CSV or Markdown).
+
+    Parameters
+    ----------
+    name : str
+        The statistics task name.
+    results : dict
+        Mapping of metric names to computed values.
+    savename : str
+        Output file path. Extension determines format:
+        - .csv → CSV file
+        - .md → Markdown table
+        - .json → JSON file
+        - anything else → Markdown table
+    """
+    import numpy as np
+
+    # Extract scalar values from results
+    rows = {}
+    for metric, value in results.items():
+        if hasattr(value, "values"):
+            v = value.values
+            if isinstance(v, np.ndarray) and v.ndim == 0:
+                v = v.item()
+            elif isinstance(v, np.ndarray):
+                v = float(v.mean())
+        elif hasattr(value, "item"):
+            v = value.item()
+        else:
+            v = value
+        rows[metric] = v
+
+    df = pd.DataFrame([rows], index=[name])
+
+    if savename.endswith(".csv"):
+        df.to_csv(savename)
+        logger.info("Saved statistics to %s (CSV)", savename)
+    elif savename.endswith(".json"):
+        df.to_json(savename, indent=2)
+        logger.info("Saved statistics to %s (JSON)", savename)
+    else:
+        # Default: Markdown table
+        md = f"# Statistics: {name}\n\n"
+        md += "| Metric | Value |\n|--------|-------|\n"
+        for metric, value in rows.items():
+            md += f"| {metric} | {value:.4f} |\n"
+        with open(savename, "w") as f:
+            f.write(md)
+        logger.info("Saved statistics to %s (Markdown)", savename)

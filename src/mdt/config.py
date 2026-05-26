@@ -112,6 +112,45 @@ class ConfigParser:
                 if "input" not in details:
                     raise ValueError(f"Configuration validation failed: Plot task '{name}' must specify an 'input' key.")
 
+        self._validate_region_masking()
+
+    def _validate_region_masking(self) -> None:
+        """Validate mask and regions configuration."""
+        # Validate mask keys in pairing section
+        for name, details in self.pairing.items():
+            if "mask" in details:
+                mask_val = details["mask"]
+                if not isinstance(mask_val, str) or not mask_val.strip():
+                    raise ValueError(
+                        f"Configuration validation failed: Pairing '{name}' has invalid "
+                        f"'mask' value \u2014 must be a non-empty string."
+                    )
+
+        # Validate regions in plots and statistics
+        for section_name, section in [("plots", self.plots), ("statistics", self.statistics)]:
+            for name, details in section.items():
+                kwargs = details.get("kwargs", {}) or {}
+                if "regions" in kwargs:
+                    regions = kwargs["regions"]
+                    if (
+                        not isinstance(regions, list)
+                        or len(regions) == 0
+                        or not all(isinstance(r, str) and r.strip() for r in regions)
+                    ):
+                        raise ValueError(
+                            f"Configuration validation failed: {section_name.title()} task "
+                            f"'{name}' has invalid 'regions' \u2014 must be a list of non-empty strings."
+                        )
+                    # Cross-validate: referenced pairing must have mask
+                    input_name = details.get("input", "")
+                    pairing_details = self.pairing.get(input_name, {})
+                    if "mask" not in pairing_details:
+                        raise ValueError(
+                            f"Configuration validation failed: {section_name.title()} task "
+                            f"'{name}' specifies 'regions' but its input pairing "
+                            f"'{input_name}' does not define a 'mask' key."
+                        )
+
     @property
     def data(self) -> Dict[str, Any]:
         """dict: The 'data' section of the configuration."""

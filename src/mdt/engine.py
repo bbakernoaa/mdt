@@ -100,9 +100,15 @@ class PrefectEngine(Engine):
         if len(clusters_cfg) == 1 and next(iter(clusters_cfg.values())).get("mode", "local") == "local":
             logger.info("Setting up a single local Dask cluster.")
             cluster_name = next(iter(clusters_cfg.keys()))
-            workers = next(iter(clusters_cfg.values())).get("workers", 1)
+            cluster_cfg = next(iter(clusters_cfg.values()))
+            workers = cluster_cfg.get("workers", 1)
+            memory_limit = cluster_cfg.get("memory_limit", "auto")
             # Assign the requested numeric resource to the local workers to prevent hanging
-            return dask.distributed.LocalCluster(n_workers=workers, resources={cluster_name.upper(): 1})
+            return dask.distributed.LocalCluster(
+                n_workers=workers,
+                resources={cluster_name.upper(): 1},
+                memory_limit=memory_limit,
+            )
 
         # Multi-cluster or HPC mode:
         # Create a central scheduler on the node where MDT is executed.
@@ -193,19 +199,29 @@ class PrefectEngine(Engine):
             representing their completion state and results.
         """
         from prefect import flow, task
-        from prefect_dask.task_runners import DaskTaskRunner
 
         # Prefect Task Wrappers — defined here so the @task decorator is only
         # evaluated when Prefect is actually installed and execute() is called.
         # Requirement 3.5: We maintain lazy imports.
 
-        p_load_data = task(name="Load Data")(prefect_load_data)
-        p_pair_data = task(name="Pair Data")(prefect_pair_data)
-        p_combine_paired_data = task(name="Combine Paired Data")(prefect_combine_paired_data)
-        p_compute_statistics = task(name="Compute Statistics")(prefect_compute_statistics)
-        p_generate_plot = task(name="Generate Plot")(prefect_generate_plot)
+        from prefect.cache_policies import NONE as NO_CACHE
+
+        p_load_data = task(name="Load Data", cache_policy=NO_CACHE)(prefect_load_data)
+        p_pair_data = task(name="Pair Data", cache_policy=NO_CACHE)(prefect_pair_data)
+        p_combine_paired_data = task(name="Combine Paired Data", cache_policy=NO_CACHE)(prefect_combine_paired_data)
+        p_compute_statistics = task(name="Compute Statistics", cache_policy=NO_CACHE)(prefect_compute_statistics)
+        p_generate_plot = task(name="Generate Plot", cache_policy=NO_CACHE)(prefect_generate_plot)
 
         import dask
+        from contextlib import nullcontext
+
+        # Determine if we need Dask resource annotations
+        exec_cfg = self.config.execution
+        clusters_cfg = exec_cfg.get("clusters", {})
+        use_dask_runner = len(clusters_cfg) > 1 or any(
+            cfg.get("mode", "local") != "local" or cfg.get("workers", 1) > 1
+            for cfg in clusters_cfg.values()
+        )
 
         # Define the Prefect flow inline to capture the instance variables
         @flow(name="MDT Verification Workflow")  # type: ignore
@@ -228,7 +244,9 @@ class PrefectEngine(Engine):
                 logger.debug(f"Routing task '{node_id}' to cluster resource: {res_key}")
 
                 # Route the task to the specific worker pool via Dask Resource Annotation
-                with dask.annotate(resources={res_key: 1}):
+                # Only use dask.annotate when running with DaskTaskRunner
+                annotation_ctx = dask.annotate(resources={res_key: 1}) if use_dask_runner else nullcontext()
+                with annotation_ctx:
                     if task_type == "load_data":
                         name = node_data["name"]
                         kwargs = node_data["kwargs"]
@@ -312,13 +330,18 @@ class PrefectEngine(Engine):
             logger.info("All tasks submitted to Prefect.")
             return task_outputs
 
-        # Setup Dask clusters and configure Prefect to use the central scheduler
-        cluster = self._setup_dask_clusters()
-        logger.info(f"Central Dask Scheduler address: {cluster.scheduler_address}")
-
-        # Execute the Prefect flow, explicitly overriding the task_runner with our central cluster
+        # Setup execution environment
         logger.info("Starting Prefect flow execution...")
-        task_futures: Dict[str, Any] = mdt_flow.with_options(task_runner=cast(Any, DaskTaskRunner(address=cluster.scheduler_address)))()
+        if use_dask_runner:
+            # Setup Dask clusters and configure Prefect to use the central scheduler
+            from prefect_dask.task_runners import DaskTaskRunner
+            cluster = self._setup_dask_clusters()
+            logger.info(f"Central Dask Scheduler address: {cluster.scheduler_address}")
+            task_futures: Dict[str, Any] = mdt_flow.with_options(task_runner=cast(Any, DaskTaskRunner(address=cluster.scheduler_address)))()
+        else:
+            # Single local worker — use ConcurrentTaskRunner (no Dask serialization overhead)
+            from prefect.task_runners import ConcurrentTaskRunner
+            task_futures = mdt_flow.with_options(task_runner=ConcurrentTaskRunner())()
 
         # Requirement: Ensure the CLI waits for task completion.
         # Prefect .submit() returns futures. We need to wait for them.

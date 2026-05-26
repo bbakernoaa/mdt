@@ -161,3 +161,6 @@ cython_debug/
 # test artifacts
 *.png
 *.csv
+
+# ESMF log files
+PET*.ESMF_LogFile

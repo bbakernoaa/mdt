@@ -77,6 +77,10 @@ def main() -> None:
 
             logger.info("Workflow execution completed successfully.")
 
+            # Force clean shutdown to avoid segfault from Prefect server threads
+            import os
+            os._exit(0)
+
         except Exception as e:
             if args.debug:
                 logger.exception("Error executing MDT workflow")

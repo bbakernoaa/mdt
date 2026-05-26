@@ -3,6 +3,7 @@ data:
     type: "gfs"
     kwargs:
       dates: "2023-08-01"
+      lead_time: [0, 3, 6, 9, 12, 15, 18, 21, 24]
 
   ish_lite_obs:
     type: "ish_lite"
@@ -13,15 +14,16 @@ pairing:
   pair_gfs_ish:
     source: "gfs_model"
     target: "ish_lite_obs"
-    method: "nearest"
+    method: "bilinear"
 
 statistics:
   met_stats:
     input: "pair_gfs_ish"
-    metrics: ["rmse", "mb"]
+    metrics: ["rmse", "mb", "mae", "mse", "mape", "ioa_m", "fac2", "r2", "d1", "e1", "ac"]
     kwargs:
       obs_var: "t2m"
       mod_var: "TMP_2maboveground"
+      savename: "gfs_ish_stats.md"
 
 plots:
   timeseries_temp:
@@ -29,4 +31,45 @@ plots:
     type: "timeseries"
     kwargs:
       savename: "gfs_ish_temp_ts.png"
-      column: "t2m"
+      columns:
+        t2m:
+          label: "ISH-Lite"
+          color: "black"
+        TMP_2maboveground:
+          label: "GFS"
+          color: "green"
+
+  taylor_temp:
+    input: "pair_gfs_ish"
+    type: "taylor"
+    kwargs:
+      savename: "gfs_ish_taylor.png"
+      col1: "t2m"
+      col2: "TMP_2maboveground"
+      label1: "GFS vs ISH-Lite"
+
+  scatter_temp:
+    input: "pair_gfs_ish"
+    type: "scatter"
+    kwargs:
+      savename: "gfs_ish_scatter.png"
+      x: "t2m"
+      y: "TMP_2maboveground"
+      title: "GFS vs ISH-Lite Temperature"
+
+  spatial_bias:
+    input: "pair_gfs_ish"
+    type: "spatial_bias_scatter"
+    kwargs:
+      savename: "gfs_ish_spatial_bias.png"
+      col1: "t2m"
+      col2: "TMP_2maboveground"
+      fact: 0.05
+
+  radar_plot:
+    input: "pair_gfs_ish"
+    type: "radar"
+    kwargs:
+      savename: "gfs_ish_radar.png"
+      obs_col: "t2m"
+      mod_cols: ["TMP_2maboveground"]

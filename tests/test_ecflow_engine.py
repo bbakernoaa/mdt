@@ -384,8 +384,8 @@ class TestBuildSuiteTriggers:
         trigger = pair_task.add_trigger.call_args.args[0]
 
         # Both predecessors should appear (sorted alphabetically)
-        assert "load/load_aeronet == complete" in trigger
-        assert "load/load_merra2 == complete" in trigger
+        assert "/mdt/load/load_aeronet == complete" in trigger
+        assert "/mdt/load/load_merra2 == complete" in trigger
         assert " and " in trigger
 
     def test_root_nodes_have_no_trigger(self, _tracking_ecflow, multi_node_dag, _make_config):
@@ -410,12 +410,12 @@ class TestBuildSuiteTriggers:
         stats_task = _tracking_ecflow["tasks"]["stats_bias"]
         stats_task.add_trigger.assert_called_once()
         trigger = stats_task.add_trigger.call_args.args[0]
-        assert trigger == "combine/combine_all == complete"
+        assert trigger == "/mdt/combine/combine_all == complete"
 
         plot_task = _tracking_ecflow["tasks"]["plot_spatial"]
         plot_task.add_trigger.assert_called_once()
         trigger = plot_task.add_trigger.call_args.args[0]
-        assert trigger == "statistics/stats_bias == complete"
+        assert trigger == "/mdt/statistics/stats_bias == complete"
 
 
 class TestBuildSuiteVariables:

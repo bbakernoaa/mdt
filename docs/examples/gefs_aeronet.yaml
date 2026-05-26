@@ -2,13 +2,18 @@ data:
   gefs_model:
     type: "gefs"
     kwargs:
-      dates: "2023-08-01"
+      dates: ["2023-08-01", "2023-09-02"]
       product: "aerosol"
+      lead_time: [0, 3, 6, 9, 12, 15, 18, 21, 24]
+      filters: # grib2io filters
+        typeOfFirstFixedSurface: 10 # Get the Entire Atmosphere variables
 
   aeronet_obs:
     type: "aeronet"
     kwargs:
-      dates: "2023-08-01"
+      dates: ["2023-08-01", "2023-09-02"]
+      interp_to_aod_values: [550., 440., 670., 870., 1020.]
+      freq: "h"
 
 pairing:
   pair_gefs_aeronet:
@@ -19,20 +24,39 @@ pairing:
 statistics:
   aod_stats:
     input: "pair_gefs_aeronet"
-    metrics: ["rmse", "mb", "corr"]
+    metrics: ["rmse", "mb", "mae", "mse", "mape", "ioa_m", "fac2", "r2", "d1", "e1", "ac"]
     kwargs:
       obs_var: "aod_550nm"
-      mod_var: "dust" # Example variable
+      mod_var: "totAOD550"
+      savename: "gefs_aeronet_stats.md"
 
 plots:
   spatial_aod:
     input: "pair_gefs_aeronet"
-    type: "spatial"
+    type: "spatial_bias_scatter"
     kwargs:
       savename: "gefs_aeronet_spatial.png"
+      col1: "aod_550nm"
+      col2: "totAOD550"
+      fact: 0.2
 
-  timeseries_aod:
+  scatter_aod:
     input: "pair_gefs_aeronet"
-    type: "timeseries"
+    type: "scatter"
     kwargs:
-      savename: "gefs_aeronet_ts.png"
+      savename: "gefs_aeronet_scatter.png"
+      var1: "aod_550nm"
+      var2: "totAOD550"
+      title: "GEFS vs AERONET AOD"
+      edgecolors: 'black'
+      linewidths: 0.1
+      alpha: 0.7
+
+  timeseries_bias:
+    input: "pair_gefs_aeronet"
+    type: "timeseriesstat"
+    kwargs:
+      savename: "gefs_aeronet_timeseries_stat.png"
+      var1: "aod_550nm"
+      var2: "totAOD550"
+      freq: "3h"
