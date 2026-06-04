@@ -31,6 +31,9 @@ MDT supports virtualizing large datasets to enable efficient, random access with
 *   **`backend`**: The virtualization engine to use (`kerchunk_json`, `kerchunk_parquet`, or `icechunk`).
 *   **`store_path`**: The local or cloud path where the virtual index will be stored.
 *   **`icechunk_repo`**: (Required for `icechunk`) The path to the Icechunk repository.
+*   **`max_scan_attempts`**: (Optional) Number of retry attempts when scanning GRIB2 files (default: reader-specific).
+*   **`network_timeout`**: (Optional) Network timeout in seconds for remote requests.
+*   **`max_concurrent_requests`**: (Optional) Maximum number of concurrent network requests for parallel scanning.
 
 ```yaml
 data:

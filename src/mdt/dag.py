@@ -74,10 +74,18 @@ class DAGBuilder:
             zarr_store = details.get("zarr_store", {})
             if zarr_store.get("enabled", False):
                 kwargs["use_virtualizarr"] = True
-                kwargs["virtualizarr_backend"] = zarr_store.get("backend", "kerchunk_json")
+                backend = zarr_store.get("backend", "kerchunk_json")
+                kwargs["virtualizarr_backend"] = backend
                 kwargs["store_path"] = zarr_store.get("store_path", f"./zarr_stores/{name}/")
-                if zarr_store.get("icechunk_repo"):
-                    kwargs["icechunk_repo"] = zarr_store["icechunk_repo"]
+                if backend == "icechunk":
+                    kwargs["use_icechunk"] = True
+                    if zarr_store.get("icechunk_repo"):
+                        kwargs["icechunk_repo"] = zarr_store["icechunk_repo"]
+
+                # Pass through robustness parameters if present
+                for param in ["max_scan_attempts", "network_timeout", "max_concurrent_requests"]:
+                    if param in zarr_store:
+                        kwargs[param] = zarr_store[param]
 
             target_cluster = details.get("cluster", default_cluster)
             logger.debug(f"Adding data node: {node_id} (type={dataset_type}, cluster={target_cluster})")
