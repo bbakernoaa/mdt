@@ -585,12 +585,15 @@ class TestGenerateTaskWrappersScriptContent:
 
     def _read_script(self, engine, node_id):
         """Helper to read the generated script for a given node."""
-        path = os.path.join(engine.task_script_dir, f"{node_id}.ecf")
-        with open(path) as fh:
+        from pathlib import Path
+
+        matches = list(Path(engine.task_script_dir).rglob(f"{node_id}.ecf"))
+        assert len(matches) == 1
+        with matches[0].open() as fh:
             return fh.read()
 
     def test_script_contains_init_call(self, _fake_ecflow, simple_dag, _make_config, tmp_path):
-        """Each wrapper calls client.init() at the start."""
+        """Each wrapper calls client.child_init() at the start."""
         from mdt.ecflow_engine import EcFlowEngine
 
         cfg = _make_config({"task_script_dir": str(tmp_path / "scripts")})
@@ -598,10 +601,10 @@ class TestGenerateTaskWrappersScriptContent:
         engine.generate_task_wrappers()
 
         content = self._read_script(engine, "load_obs")
-        assert "client.init(" in content
+        assert "client.child_init(" in content
 
     def test_script_contains_complete_call(self, _fake_ecflow, simple_dag, _make_config, tmp_path):
-        """Each wrapper calls client.complete() on success."""
+        """Each wrapper calls client.child_complete() on success."""
         from mdt.ecflow_engine import EcFlowEngine
 
         cfg = _make_config({"task_script_dir": str(tmp_path / "scripts")})
@@ -609,10 +612,10 @@ class TestGenerateTaskWrappersScriptContent:
         engine.generate_task_wrappers()
 
         content = self._read_script(engine, "load_obs")
-        assert "client.complete()" in content
+        assert "client.child_complete()" in content
 
     def test_script_contains_abort_call(self, _fake_ecflow, simple_dag, _make_config, tmp_path):
-        """Each wrapper calls client.abort() on exception."""
+        """Each wrapper calls client.child_abort() on exception."""
         from mdt.ecflow_engine import EcFlowEngine
 
         cfg = _make_config({"task_script_dir": str(tmp_path / "scripts")})
@@ -620,7 +623,7 @@ class TestGenerateTaskWrappersScriptContent:
         engine.generate_task_wrappers()
 
         content = self._read_script(engine, "load_obs")
-        assert "client.abort(" in content
+        assert "client.child_abort(" in content
 
     def test_script_contains_ecflow_var_tokens(self, _fake_ecflow, simple_dag, _make_config, tmp_path):
         """Scripts use ecFlow %VAR% substitution tokens for task parameters."""
@@ -671,7 +674,9 @@ class TestGenerateTaskWrappersScriptContent:
         engine.generate_task_wrappers()
 
         content = self._read_script(engine, "load_obs")
-        assert content.startswith("#!/usr/bin/env python3")
+        first_line = content.splitlines()[0]
+        assert first_line.startswith("#!")
+        assert "python" in first_line.lower()
 
     def test_script_exits_with_code_1_on_error(self, _fake_ecflow, simple_dag, _make_config, tmp_path):
         """Script calls sys.exit(1) after abort on exception."""

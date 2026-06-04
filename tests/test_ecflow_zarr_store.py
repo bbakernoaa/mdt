@@ -209,10 +209,11 @@ class TestEcFlowWrapperScriptContent:
     @staticmethod
     def _read_script(engine, node_id):
         """Read the generated .ecf script for *node_id*."""
-        import os
+        from pathlib import Path
 
-        path = os.path.join(engine.task_script_dir, f"{node_id}.ecf")
-        with open(path) as fh:
+        matches = list(Path(engine.task_script_dir).rglob(f"{node_id}.ecf"))
+        assert len(matches) == 1
+        with matches[0].open() as fh:
             return fh.read()
 
     def test_wrapper_contains_zarr_store_enabled_variable(self, _fake_ecflow, _make_config, tmp_path):

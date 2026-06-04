@@ -9,6 +9,8 @@ loaded without ecFlow installed.
 
 import json
 import logging
+import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List
 
@@ -73,7 +75,7 @@ _DISPATCH_BLOCKS: dict[str, str] = {
 }
 
 
-def _build_wrapper_script(node_id: str) -> str:  # noqa: ARG001
+def _build_wrapper_script(node_id: str, python_executable: str) -> str:  # noqa: ARG001
     """Return the full text of an ``.ecf`` wrapper script for *node_id*.
 
     The script uses ecFlow ``%VAR%`` substitution tokens that the ecFlow
@@ -82,15 +84,22 @@ def _build_wrapper_script(node_id: str) -> str:  # noqa: ARG001
     """
     # node_id is used by the caller to name the script file; not needed in the script body.
     lines = [
-        "#!/usr/bin/env python3",
+        f"#!{python_executable}",
         '"""Auto-generated ecFlow wrapper for task %TASK_NAME%."""',
         "import json, os, sys",
         "import ecflow",
         "",
         'client = ecflow.Client(os.environ.get("ECF_HOST", "localhost"),',
         '                       int(os.environ.get("ECF_PORT", "3141")))',
+        'child_path = "%ECF_NAME%"',
+        'child_pass = "%ECF_PASS%"',
+        'child_try_no = int("%ECF_TRYNO%")',
+        "client.set_child_path(child_path)",
+        "client.set_child_password(child_pass)",
+        "client.set_child_try_no(child_try_no)",
+        "client.set_child_pid(os.getpid())",
         "try:",
-        '    client.init(os.environ["ECF_NAME"], os.environ["ECF_PASS"])',
+        "    client.child_init()",
         "",
         "    # --- task parameters (substituted by ecFlow) ---",
         '    task_type = "%TASK_TYPE%"',
@@ -111,16 +120,17 @@ def _build_wrapper_script(node_id: str) -> str:  # noqa: ARG001
     for task_type, block in _DISPATCH_BLOCKS.items():
         keyword = "if" if first else "elif"
         lines.append(f'    {keyword} task_type == "{task_type}":')
-        lines.append(block)
+        for block_line in block.splitlines():
+            lines.append(f"    {block_line}")
         first = False
     lines.append("    else:")
     lines.append('        raise ValueError(f"Unknown task_type: {task_type}")')
 
     lines += [
         "",
-        "    client.complete()",
+        "    client.child_complete()",
         "except Exception as e:",
-        "    client.abort(str(e))",
+        "    client.child_abort(str(e))",
         "    sys.exit(1)",
         "",
     ]
@@ -159,6 +169,7 @@ class EcFlowEngine(Engine):
         self.port: int = int(exec_cfg.get("ecflow_port", 3141))
         self.suite_name: str = exec_cfg.get("suite_name", "mdt")
         self.task_script_dir: str = exec_cfg.get("task_script_dir", "./ecflow_tasks/")
+        self.python_executable: str = sys.executable
 
     # ------------------------------------------------------------------
     # Engine ABC
@@ -207,6 +218,10 @@ class EcFlowEngine(Engine):
         defs = ecflow.Defs()
         suite = ecflow.Suite(self.suite_name)
 
+        # Let ecFlow resolve scripts from task_script_dir/<suite>/<family>/<task>.ecf
+        # regardless of server ECF_HOME location.
+        suite.add_variable("ECF_FILES", os.path.abspath(self.task_script_dir))
+
         # Create one family per task type.
         families: dict[str, Any] = {}
         for family_name in _FAMILY_MAP.values():
@@ -238,6 +253,13 @@ class EcFlowEngine(Engine):
             task_node.add_variable("DIM", data.get("dim") or "")
             task_node.add_variable("SOURCES", json.dumps(data.get("sources") or []))
             task_node.add_variable("CLUSTER", data.get("cluster") or "")
+
+            # Always define ZARR_* so ecFlow token substitution succeeds for all
+            # generated wrappers, even for non-load tasks.
+            task_node.add_variable("ZARR_STORE_ENABLED", "false")
+            task_node.add_variable("ZARR_STORE_BACKEND", "")
+            task_node.add_variable("ZARR_STORE_PATH", "")
+            task_node.add_variable("ZARR_STORE_ICECHUNK_REPO", "")
 
             if task_type == "load_data":
                 node_kwargs = data.get("kwargs") or {}
@@ -291,15 +313,18 @@ class EcFlowEngine(Engine):
         list[str]
             Paths of the generated ``.ecf`` files.
         """
-        Path(self.task_script_dir).mkdir(parents=True, exist_ok=True)
-
         generated: List[str] = []
         logger.info(f"Generating ecFlow wrapper scripts in {self.task_script_dir}")
-        for node_id in self.dag.nodes:
-            script_path = Path(self.task_script_dir) / f"{node_id}.ecf"
+        for node_id, data in self.dag.nodes(data=True):
+            task_type = data["task_type"]
+            family_name = _FAMILY_MAP[task_type]
+
+            # Match ecFlow's default task script lookup: /suite/family/task.ecf
+            script_path = Path(self.task_script_dir) / self.suite_name / family_name / f"{node_id}.ecf"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Writing wrapper script: {script_path}")
             with script_path.open("w") as fh:
-                fh.write(_build_wrapper_script(node_id))
+                fh.write(_build_wrapper_script(node_id, self.python_executable))
             generated.append(str(script_path))
 
         return generated
