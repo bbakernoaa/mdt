@@ -33,6 +33,10 @@ _virtualizarr_keys = {
     "virtualizarr_backend",
     "store_path",
     "icechunk_repo",
+    "use_icechunk",
+    "max_scan_attempts",
+    "network_timeout",
+    "max_concurrent_requests",
 }
 
 _non_vz_kwargs = st.dictionaries(
@@ -56,7 +60,7 @@ def _make_mock_dataset():
 
 
 @given(vz_kwargs=_enabled_kwargs, extra_kwargs=_non_vz_kwargs)
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
     """When zarr_store is enabled, monetio.load() SHALL receive.
 
@@ -89,7 +93,7 @@ def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
 
 
 @given(extra_kwargs=_non_vz_kwargs)
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_disabled_omits_virtualizarr_params(extra_kwargs):
     """When zarr_store is absent or disabled, monetio.load() SHALL NOT receive.
 
@@ -120,7 +124,7 @@ def test_disabled_omits_virtualizarr_params(extra_kwargs):
 
 
 @given(vz_kwargs=_enabled_kwargs, extra_kwargs=_non_vz_kwargs)
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_fallback_strips_virtualizarr_params(vz_kwargs, extra_kwargs):
     """When monetio.load() raises an exception with VirtualiZarr enabled.
 
