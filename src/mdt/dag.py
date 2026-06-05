@@ -87,6 +87,13 @@ class DAGBuilder:
                     if param in zarr_store:
                         kwargs[param] = zarr_store[param]
 
+                # Support loading existing Zarr/Icechunk stores
+                if zarr_store.get("existing", False):
+                    kwargs["existing_zarr"] = True
+
+                if "zarr_kwargs" in zarr_store:
+                    kwargs["zarr_kwargs"] = zarr_store["zarr_kwargs"]
+
             target_cluster = details.get("cluster", default_cluster)
             logger.debug(f"Adding data node: {node_id} (type={dataset_type}, cluster={target_cluster})")
             self.graph.add_node(

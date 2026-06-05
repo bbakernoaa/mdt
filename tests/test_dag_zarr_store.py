@@ -202,6 +202,29 @@ class TestDAGBuilderIcechunkRepo:
         assert kw["max_scan_attempts"] == 3
         assert kw["store_path"] == "./zarr_stores/my_model/"
 
+    def test_existing_zarr_included(self):
+        """existing and zarr_kwargs are merged into kwargs when provided."""
+        config_dict = {
+            "my_model": {
+                "type": "aeronet",
+                "zarr_store": {
+                    "enabled": True,
+                    "backend": "zarr",
+                    "existing": True,
+                    "store_path": "/path/to/zarr",
+                    "zarr_kwargs": {"consolidated": True},
+                },
+            }
+        }
+        config = DummyConfig(config_dict)
+        dag = DAGBuilder(config).build()
+        kw = dag.nodes["load_my_model"]["kwargs"]
+
+        assert kw["existing_zarr"] is True
+        assert kw["virtualizarr_backend"] == "zarr"
+        assert kw["store_path"] == "/path/to/zarr"
+        assert kw["zarr_kwargs"] == {"consolidated": True}
+
     def test_icechunk_repo_included(self):
         """icechunk_repo is merged into kwargs when provided."""
         config_dict = {
