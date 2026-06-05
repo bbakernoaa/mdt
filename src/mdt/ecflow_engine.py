@@ -286,10 +286,7 @@ class EcFlowEngine(Engine):
             if not predecessors:
                 continue
 
-            parts = [
-                f"/{self.suite_name}/{node_family[pred]}/{pred} == complete"
-                for pred in sorted(predecessors)
-            ]
+            parts = [f"/{self.suite_name}/{node_family[pred]}/{pred} == complete" for pred in sorted(predecessors)]
             trigger_expr = " and ".join(parts)
             node_tasks[node_id].add_trigger(trigger_expr)
 

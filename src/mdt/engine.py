@@ -203,7 +203,6 @@ class PrefectEngine(Engine):
         # Prefect Task Wrappers — defined here so the @task decorator is only
         # evaluated when Prefect is actually installed and execute() is called.
         # Requirement 3.5: We maintain lazy imports.
-
         from prefect.cache_policies import NONE as NO_CACHE
 
         p_load_data = task(name="Load Data", cache_policy=NO_CACHE)(prefect_load_data)
@@ -212,15 +211,15 @@ class PrefectEngine(Engine):
         p_compute_statistics = task(name="Compute Statistics", cache_policy=NO_CACHE)(prefect_compute_statistics)
         p_generate_plot = task(name="Generate Plot", cache_policy=NO_CACHE)(prefect_generate_plot)
 
-        import dask
         from contextlib import nullcontext
+
+        import dask
 
         # Determine if we need Dask resource annotations
         exec_cfg = self.config.execution
         clusters_cfg = exec_cfg.get("clusters", {})
         use_dask_runner = len(clusters_cfg) > 1 or any(
-            cfg.get("mode", "local") != "local" or cfg.get("workers", 1) > 1
-            for cfg in clusters_cfg.values()
+            cfg.get("mode", "local") != "local" or cfg.get("workers", 1) > 1 for cfg in clusters_cfg.values()
         )
 
         # Define the Prefect flow inline to capture the instance variables
@@ -335,12 +334,14 @@ class PrefectEngine(Engine):
         if use_dask_runner:
             # Setup Dask clusters and configure Prefect to use the central scheduler
             from prefect_dask.task_runners import DaskTaskRunner
+
             cluster = self._setup_dask_clusters()
             logger.info(f"Central Dask Scheduler address: {cluster.scheduler_address}")
             task_futures: Dict[str, Any] = mdt_flow.with_options(task_runner=cast(Any, DaskTaskRunner(address=cluster.scheduler_address)))()
         else:
             # Single local worker — use ConcurrentTaskRunner (no Dask serialization overhead)
             from prefect.task_runners import ConcurrentTaskRunner
+
             task_futures = mdt_flow.with_options(task_runner=ConcurrentTaskRunner())()
 
         # Requirement: Ensure the CLI waits for task completion.

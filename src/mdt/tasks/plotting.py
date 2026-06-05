@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, cast
 
 import pandas as pd
 import xarray as xr
@@ -18,26 +18,23 @@ def _sanitize_region_name(region: str) -> str:
     return re.sub(r"[^a-zA-Z0-9\-.]", "_", region)
 
 
-def _find_region_variable(data):
+def _find_region_variable(data: xr.Dataset) -> str:
     """Find the region label variable in the dataset (added by query_mask)."""
     if not isinstance(data, xr.Dataset):
         raise ValueError("Region filtering requires an xarray Dataset.")
     for var in data.data_vars:
         if data[var].dtype == object or data[var].dtype.kind in ("U", "S"):
-            return var
-    raise ValueError(
-        "No region label variable found in dataset. "
-        "Ensure a mask is applied during pairing."
-    )
+            return cast(str, var)
+    raise ValueError("No region label variable found in dataset. Ensure a mask is applied during pairing.")
 
 
-def _filter_by_region(data, region_var, region_name):
+def _filter_by_region(data: xr.Dataset, region_var: str, region_name: str) -> xr.Dataset:
     """Filter dataset to only points matching the given region."""
     mask = data[region_var] == region_name
     return data.where(mask, drop=True)
 
 
-def _is_empty(data):
+def _is_empty(data: Union[xr.Dataset, xr.DataArray, pd.DataFrame]) -> bool:
     """Check if filtered dataset has no data points."""
     if isinstance(data, xr.Dataset):
         for var in data.data_vars:
@@ -91,10 +88,7 @@ def generate_plot(
     if regions:
         savename_template = kwargs.get("savename", f"{name}.png")
         if "{region}" not in savename_template:
-            raise ValueError(
-                f"Plot '{name}': savename must contain '{{region}}' placeholder "
-                f"when regions are specified."
-            )
+            raise ValueError(f"Plot '{name}': savename must contain '{{region}}' placeholder when regions are specified.")
         region_var = _find_region_variable(input_data)
         results = []
         for region in regions:
@@ -175,6 +169,7 @@ def _find_plot_class(plot_type: str) -> Any:
     if class_name:
         try:
             from monet_plots.plots import radar, soccer, timeseries
+
             submodule_map = {
                 "RadarPlot": radar.RadarPlot,
                 "SoccerPlot": soccer.SoccerPlot,
@@ -204,8 +199,8 @@ def _generate_static_plot(
 ) -> Any:
     """Track A: Static plotting with monet-plots (Matplotlib + Cartopy)."""
     import matplotlib
+
     matplotlib.use("agg")  # Non-interactive backend for thread safety
-    import matplotlib.pyplot as plt
 
     savename = kwargs.pop("savename", f"{name}.png")
 
@@ -246,7 +241,7 @@ def _generate_static_plot(
             first_col, first_label, first_color = columns_spec[0]
             # Only pass plotargs to plot classes that support it (TimeSeriesPlot)
             init_kwargs = {"y": first_col, "label": first_label}
-            if first_color and hasattr(plot_class, '_plot_xarray'):
+            if first_color and hasattr(plot_class, "_plot_xarray"):
                 # TimeSeriesPlot uses plotargs for line styling
                 init_kwargs["plotargs"] = {"color": first_color}
             plot_obj = plot_class(data, **init_kwargs, **constructor_kwargs)
@@ -255,6 +250,7 @@ def _generate_static_plot(
 
             # Overlay additional columns directly on the same axes
             import xarray as xr
+
             for col, label, color in columns_spec[1:]:
                 if isinstance(data, xr.Dataset) and col in data:
                     var_data = data[col]
@@ -309,19 +305,56 @@ def _generate_static_plot(
         # ScatterPlot: x, y, c, colorbar, title
         # SpatialBiasScatterPlot: col1, col2, vmin, vmax, ncolors, fact, cmap
         constructor_keys = {
-            "x", "y", "plotargs", "fillargs", "title", "ylabel", "label",
-            "col1", "col2", "label1", "scale", "c", "colorbar",
-            "vmin", "vmax", "ncolors", "fact", "cmap",
-            "obs_col", "mod_cols", "mod_col", "metrics", "metrics_data",
-            "bias_col", "error_col", "label_col", "metric", "goal", "criteria",
-            "modelvar", "obsvar", "gridobj", "ncolors", "discrete", "col", "row", "col_wrap", "size", "aspect",
-            "var1", "var2", "stat", "time_col", "second_dim",
+            "x",
+            "y",
+            "plotargs",
+            "fillargs",
+            "title",
+            "ylabel",
+            "label",
+            "col1",
+            "col2",
+            "label1",
+            "scale",
+            "c",
+            "colorbar",
+            "vmin",
+            "vmax",
+            "ncolors",
+            "fact",
+            "cmap",
+            "obs_col",
+            "mod_cols",
+            "mod_col",
+            "metrics",
+            "metrics_data",
+            "bias_col",
+            "error_col",
+            "label_col",
+            "metric",
+            "goal",
+            "criteria",
+            "modelvar",
+            "obsvar",
+            "gridobj",
+            "discrete",
+            "col",
+            "row",
+            "col_wrap",
+            "size",
+            "aspect",
+            "var1",
+            "var2",
+            "stat",
+            "time_col",
+            "second_dim",
         }
         constructor_kwargs = {k: v for k, v in kwargs.items() if k in constructor_keys}
         plot_kwargs = {k: v for k, v in kwargs.items() if k not in constructor_keys}
 
         # For spatial plots, reduce time dimension to mean (one value per station)
         import xarray as xr
+
         if isinstance(data, xr.Dataset) and "time" in data.dims and plot_type in ("spatial_bias_scatter", "spatial"):
             data = data.mean(dim="time", skipna=True)
 

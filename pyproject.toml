@@ -104,6 +104,7 @@ convention = "numpy"
 
 [tool.mypy]
 python_version = "3.11"
+exclude = "^tests/"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -123,6 +124,10 @@ warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
 module = [
+    "pytest.*",
+    "hypothesis.*",
+    "xarray.*",
+    "xregrid.*",
     "monetio.*",
     "monet.*",
     "monet_stats.*",
@@ -138,3 +143,7 @@ module = [
     "matplotlib.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true

@@ -66,10 +66,7 @@ def compute_statistics(
     if regions:
         savename_template = kwargs.get("savename", "")
         if "{region}" not in savename_template:
-            raise ValueError(
-                f"Statistics '{name}': savename must contain '{{region}}' placeholder "
-                f"when regions are specified."
-            )
+            raise ValueError(f"Statistics '{name}': savename must contain '{{region}}' placeholder when regions are specified.")
         region_var = _find_region_variable(input_data)
         all_results = {}
         for region in regions:

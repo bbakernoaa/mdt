@@ -122,8 +122,7 @@ class ConfigParser:
                 mask_val = details["mask"]
                 if not isinstance(mask_val, str) or not mask_val.strip():
                     raise ValueError(
-                        f"Configuration validation failed: Pairing '{name}' has invalid "
-                        f"'mask' value \u2014 must be a non-empty string."
+                        f"Configuration validation failed: Pairing '{name}' has invalid 'mask' value \u2014 must be a non-empty string."
                     )
 
         # Validate regions in plots and statistics
@@ -132,11 +131,7 @@ class ConfigParser:
                 kwargs = details.get("kwargs", {}) or {}
                 if "regions" in kwargs:
                     regions = kwargs["regions"]
-                    if (
-                        not isinstance(regions, list)
-                        or len(regions) == 0
-                        or not all(isinstance(r, str) and r.strip() for r in regions)
-                    ):
+                    if not isinstance(regions, list) or len(regions) == 0 or not all(isinstance(r, str) and r.strip() for r in regions):
                         raise ValueError(
                             f"Configuration validation failed: {section_name.title()} task "
                             f"'{name}' has invalid 'regions' \u2014 must be a list of non-empty strings."

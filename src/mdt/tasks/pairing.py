@@ -72,10 +72,15 @@ def pair_data(
         if isinstance(target_data, xr.Dataset) and "mesh" in target_data:
             target_data = target_data.drop_vars("mesh")
 
+        if isinstance(source_data, pd.DataFrame):
+            raise TypeError("source_data must be an xarray Dataset or DataArray for monet pairing")
+
+        source_xr = cast(Union[xr.Dataset, xr.DataArray], source_data)
+
         # Use the unified monet.pair interface
         # This handles both Xarray-to-Xarray and Xarray-to-DataFrame pairing,
         # maintaining Aero Protocol (laziness).
-        paired_data = monet.util.combinetool.pair(source_data, target_data, method=method, **kwargs)
+        paired_data = monet.util.combinetool.pair(source_xr, target_data, method=method, **kwargs)
 
         # Apply region mask if configured
         if mask is not None:
@@ -167,7 +172,7 @@ def combine_paired_data(
         # Combine using xarray concatenation along a new dimension
         try:
             # Create the dimension coordinate
-            combined_xr = xr.concat(datasets, dim=pd.Index(names, name=dim))  # type: ignore[arg-type]
+            combined_xr = xr.concat(datasets, dim=pd.Index(names, name=dim))
             return cast(Union[xr.Dataset, xr.DataArray], combined_xr)
         except Exception as e:
             logger.error(f"Failed to combine xarray objects: {e}")
