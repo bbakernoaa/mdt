@@ -7,6 +7,12 @@ data:
       lead_time: [0, 3, 6, 9, 12, 15, 18, 21, 24]
       filters: # grib2io filters
         typeOfFirstFixedSurface: 10 # Get the Entire Atmosphere variables
+    zarr_store:
+      enabled: true
+      backend: "icechunk"
+      icechunk_repo: "s3://my-bucket/gefs-aerosol-repo"
+      max_scan_attempts: 5
+      network_timeout: 60.0
 
   aeronet_obs:
     type: "aeronet"

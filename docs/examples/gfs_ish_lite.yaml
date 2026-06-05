@@ -4,6 +4,10 @@ data:
     kwargs:
       dates: "2023-08-01"
       lead_time: [0, 3, 6, 9, 12, 15, 18, 21, 24]
+    zarr_store:
+      enabled: true
+      backend: "icechunk"
+      icechunk_repo: "s3://my-bucket/gfs-repo"
 
   ish_lite_obs:
     type: "ish_lite"

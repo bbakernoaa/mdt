@@ -122,6 +122,10 @@ data:
     kwargs:
       dates: "2023-08-01"
       product: "aerosol"
+    zarr_store:
+      enabled: true
+      backend: "icechunk"
+      icechunk_repo: "s3://my-bucket/gefs-repo"
 
   aeronet_obs:
     type: "aeronet"
@@ -170,6 +174,10 @@ data:
     type: "gfs"
     kwargs:
       dates: "2023-08-01"
+    zarr_store:
+      enabled: true
+      backend: "icechunk"
+      icechunk_repo: "s3://my-bucket/gfs-repo"
 
   ish_lite_obs:
     type: "ish_lite"

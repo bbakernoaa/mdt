@@ -43,7 +43,46 @@ def load_data(
 
     import monetio
 
-    # 1. Attempt VirtualiZarr Loading if enabled
+    # 1. Attempt Direct Zarr/Icechunk Loading if existing store is pointed to
+    existing_zarr = kwargs.get("existing_zarr", False)
+    if existing_zarr:
+        backend = kwargs.get("virtualizarr_backend", "zarr")
+        store_path = kwargs.get("store_path", f"./zarr_stores/{name}/")
+        icechunk_repo = kwargs.get("icechunk_repo", "")
+        zarr_kwargs = kwargs.get("zarr_kwargs", {})
+
+        logger.info(
+            "Loading existing %s store for '%s' from %s",
+            backend,
+            name,
+            icechunk_repo if backend == "icechunk" else store_path,
+        )
+
+        if backend == "icechunk":
+            try:
+                import icechunk
+
+                repo = icechunk.Repository.open(icechunk_repo)
+                session = repo.readonly_session()
+                ds = xr.open_zarr(session.store, consolidated=False, **zarr_kwargs)
+                msg = f"Loaded existing Icechunk store '{name}' from {icechunk_repo}."
+                ds = update_history(ds, msg)
+                return cast(Union[xr.Dataset, pd.DataFrame], ds)
+            except Exception as e:
+                logger.error("Failed to load existing Icechunk store '%s': %s", name, e)
+                raise
+        else:
+            # Standard Zarr
+            try:
+                ds = xr.open_zarr(store_path, **zarr_kwargs)
+                msg = f"Loaded existing Zarr store '{name}' from {store_path}."
+                ds = update_history(ds, msg)
+                return cast(Union[xr.Dataset, pd.DataFrame], ds)
+            except Exception as e:
+                logger.error("Failed to load existing Zarr store '%s': %s", name, e)
+                raise
+
+    # 2. Attempt VirtualiZarr Loading if enabled
     use_virtualizarr = kwargs.get("use_virtualizarr", False)
     if use_virtualizarr:
         backend = kwargs.get("virtualizarr_backend", "kerchunk_json")
@@ -76,7 +115,18 @@ def load_data(
                 e,
             )
             # Fallback path: strip the VirtualiZarr-specific keys
-            vz_keys = ["use_virtualizarr", "virtualizarr_backend", "store_path", "icechunk_repo"]
+            vz_keys = [
+                "use_virtualizarr",
+                "virtualizarr_backend",
+                "store_path",
+                "icechunk_repo",
+                "use_icechunk",
+                "max_scan_attempts",
+                "network_timeout",
+                "max_concurrent_requests",
+                "existing_zarr",
+                "zarr_kwargs",
+            ]
             fallback_kwargs = {k: v for k, v in kwargs.items() if k not in vz_keys}
             logger.info("Retrying standard monetio.load with kwargs: %s", fallback_kwargs)
             ds = monetio.load(dataset_type, **fallback_kwargs)
@@ -84,7 +134,7 @@ def load_data(
             ds = update_history(ds, msg)
             return cast(Union[xr.Dataset, pd.DataFrame], ds)
 
-    # 2. Standard Loading Pathway
+    # 3. Standard Loading Pathway
     try:
         ds = monetio.load(dataset_type, **kwargs)
 

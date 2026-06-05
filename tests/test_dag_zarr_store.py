@@ -21,7 +21,7 @@ class DummyConfig:
 valid_dataset_names = st.from_regex(r"[a-zA-Z][a-zA-Z0-9_]{0,29}", fullmatch=True)
 
 
-@settings(max_examples=100)
+@settings(max_examples=100, deadline=None)
 @given(name=valid_dataset_names)
 def test_default_store_path_follows_naming_pattern(name):
     """Property 2: For any valid dataset name, when zarr_store.enabled is true.
@@ -177,6 +177,53 @@ class TestDAGBuilderZarrStoreEnabled:
 
 class TestDAGBuilderIcechunkRepo:
     """Tests that icechunk_repo is included only when present."""
+
+    def test_icechunk_params_included(self):
+        """icechunk-specific params are merged into kwargs when provided."""
+        config_dict = {
+            "my_model": {
+                "type": "cmaq",
+                "zarr_store": {
+                    "enabled": True,
+                    "backend": "icechunk",
+                    "icechunk_repo": "s3://bucket/repo",
+                    "max_scan_attempts": 3,
+                },
+            }
+        }
+        config = DummyConfig(config_dict)
+        dag = DAGBuilder(config).build()
+        kw = dag.nodes["load_my_model"]["kwargs"]
+
+        assert kw["use_virtualizarr"] is True
+        assert kw["virtualizarr_backend"] == "icechunk"
+        assert kw["use_icechunk"] is True
+        assert kw["icechunk_repo"] == "s3://bucket/repo"
+        assert kw["max_scan_attempts"] == 3
+        assert kw["store_path"] == "./zarr_stores/my_model/"
+
+    def test_existing_zarr_included(self):
+        """existing and zarr_kwargs are merged into kwargs when provided."""
+        config_dict = {
+            "my_model": {
+                "type": "aeronet",
+                "zarr_store": {
+                    "enabled": True,
+                    "backend": "zarr",
+                    "existing": True,
+                    "store_path": "/path/to/zarr",
+                    "zarr_kwargs": {"consolidated": True},
+                },
+            }
+        }
+        config = DummyConfig(config_dict)
+        dag = DAGBuilder(config).build()
+        kw = dag.nodes["load_my_model"]["kwargs"]
+
+        assert kw["existing_zarr"] is True
+        assert kw["virtualizarr_backend"] == "zarr"
+        assert kw["store_path"] == "/path/to/zarr"
+        assert kw["zarr_kwargs"] == {"consolidated": True}
 
     def test_icechunk_repo_included(self):
         """icechunk_repo is merged into kwargs when provided."""

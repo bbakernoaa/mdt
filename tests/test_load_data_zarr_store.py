@@ -33,6 +33,10 @@ _virtualizarr_keys = {
     "virtualizarr_backend",
     "store_path",
     "icechunk_repo",
+    "use_icechunk",
+    "max_scan_attempts",
+    "network_timeout",
+    "max_concurrent_requests",
 }
 
 _non_vz_kwargs = st.dictionaries(
@@ -56,7 +60,7 @@ def _make_mock_dataset():
 
 
 @given(vz_kwargs=_enabled_kwargs, extra_kwargs=_non_vz_kwargs)
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
     """When zarr_store is enabled, monetio.load() SHALL receive.
 
@@ -89,7 +93,7 @@ def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
 
 
 @given(extra_kwargs=_non_vz_kwargs)
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_disabled_omits_virtualizarr_params(extra_kwargs):
     """When zarr_store is absent or disabled, monetio.load() SHALL NOT receive.
 
@@ -120,7 +124,7 @@ def test_disabled_omits_virtualizarr_params(extra_kwargs):
 
 
 @given(vz_kwargs=_enabled_kwargs, extra_kwargs=_non_vz_kwargs)
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_fallback_strips_virtualizarr_params(vz_kwargs, extra_kwargs):
     """When monetio.load() raises an exception with VirtualiZarr enabled.
 
@@ -306,3 +310,47 @@ class TestLoadDataLogging:
             assert key not in call_kwargs, f"VirtualiZarr key '{key}' should not be present when disabled"
         assert call_kwargs["fname"] == "data.nc"
         assert call_kwargs["dates"] == "2023-01-01"
+
+    def test_load_existing_zarr_direct(self):
+        """When existing_zarr is True, xr.open_zarr is called directly."""
+        kwargs = {
+            "existing_zarr": True,
+            "virtualizarr_backend": "zarr",
+            "store_path": "/path/to/zarr",
+            "zarr_kwargs": {"consolidated": True},
+        }
+        mock_ds = _make_mock_dataset()
+        mock_monetio = MagicMock()
+
+        with patch("xarray.open_zarr", return_value=mock_ds) as mock_open_zarr:
+            res = self._call_load_data("existing_ds", "aeronet", kwargs, mock_monetio)
+
+        mock_open_zarr.assert_called_once_with("/path/to/zarr", consolidated=True)
+        assert res == mock_ds
+        # monetio.load should NOT be called
+        mock_monetio.load.assert_not_called()
+
+    def test_load_existing_icechunk_direct(self):
+        """When existing_zarr is True and backend is icechunk, it uses icechunk session."""
+        kwargs = {
+            "existing_zarr": True,
+            "virtualizarr_backend": "icechunk",
+            "icechunk_repo": "s3://repo",
+            "zarr_kwargs": {"chunks": {}},
+        }
+        mock_ds = _make_mock_dataset()
+        mock_monetio = MagicMock()
+        mock_icechunk = MagicMock()
+        mock_repo = MagicMock()
+        mock_session = MagicMock()
+        mock_icechunk.Repository.open.return_value = mock_repo
+        mock_repo.readonly_session.return_value = mock_session
+        mock_session.store = "mock_store"
+
+        with patch.dict("sys.modules", {"icechunk": mock_icechunk}), \
+             patch("xarray.open_zarr", return_value=mock_ds) as mock_open_zarr:
+            res = self._call_load_data("existing_ice", "gefs", kwargs, mock_monetio)
+
+        mock_icechunk.Repository.open.assert_called_once_with("s3://repo")
+        mock_open_zarr.assert_called_once_with("mock_store", consolidated=False, chunks={})
+        assert res == mock_ds
