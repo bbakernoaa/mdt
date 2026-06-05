@@ -203,7 +203,7 @@ class TestDAGBuilderIcechunkRepo:
         assert kw["store_path"] == "./zarr_stores/my_model/"
 
     def test_existing_zarr_included(self):
-        """existing and zarr_kwargs are merged into kwargs when provided."""
+        """Existing and zarr_kwargs are merged into kwargs when provided."""
         config_dict = {
             "my_model": {
                 "type": "aeronet",

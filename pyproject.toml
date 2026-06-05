@@ -88,18 +88,30 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
     "S101",    # Use of assert
+    "S102",    # Use of exec in test scaffolding
     "S108",    # Insecure temporary file
     "S110",    # try-except-pass
+    "S311",    # Pseudo-random generator acceptable in tests
+    "S603",    # Subprocess calls in integration tests
+    "S607",    # Partial executable paths in tests
     "ARG001",  # Unused function argument
     "ARG002",  # Unused method argument
     "ARG005",  # Unused lambda argument
+    "B007",    # Unused loop control variable in tests
+    "F841",    # Assigned but unused in tests/mocks
     "PT019",   # Fixture without value injected as parameter
     "PTH",     # Use Pathlib (we'll allow OS module in tests for now)
+    "E402",    # Module level import not at top in segmented test files
+    "D205",    # Blank line after summary in test docstrings
     "D102",    # Missing docstring in public method
     "RUF002",  # Ambiguous unicode character
     "RUF015",  # Prefer next(iter())
     "RUF043",  # match= contains metacharacters
     "PT017",   # assertion on exception in except block
+]
+"scripts/*" = [
+    "PTH",     # Utility patch scripts intentionally use os/open style for portability
+    "D103",    # Relax public function docstring requirement for script entrypoints
 ]
 
 [tool.mypy]
@@ -139,6 +151,7 @@ module = [
     "prefect.*",
     "prefect_dask.*",
     "ecflow.*",
+    "icechunk.*",
     "pandas.*",
     "matplotlib.*",
 ]

@@ -9,7 +9,6 @@ loaded without ecFlow installed.
 
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List
@@ -220,7 +219,7 @@ class EcFlowEngine(Engine):
 
         # Let ecFlow resolve scripts from task_script_dir/<suite>/<family>/<task>.ecf
         # regardless of server ECF_HOME location.
-        suite.add_variable("ECF_FILES", os.path.abspath(self.task_script_dir))
+        suite.add_variable("ECF_FILES", str(Path(self.task_script_dir).resolve()))
 
         # Create one family per task type.
         families: dict[str, Any] = {}

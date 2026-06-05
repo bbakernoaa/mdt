@@ -347,8 +347,7 @@ class TestLoadDataLogging:
         mock_repo.readonly_session.return_value = mock_session
         mock_session.store = "mock_store"
 
-        with patch.dict("sys.modules", {"icechunk": mock_icechunk}), \
-             patch("xarray.open_zarr", return_value=mock_ds) as mock_open_zarr:
+        with patch.dict("sys.modules", {"icechunk": mock_icechunk}), patch("xarray.open_zarr", return_value=mock_ds) as mock_open_zarr:
             res = self._call_load_data("existing_ice", "gefs", kwargs, mock_monetio)
 
         mock_icechunk.Repository.open.assert_called_once_with("s3://repo")

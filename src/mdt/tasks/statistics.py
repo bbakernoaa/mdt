@@ -1,5 +1,6 @@
 import inspect
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Union, cast
 
 import pandas as pd
@@ -369,6 +370,6 @@ def _save_statistics(name: str, results: Dict[str, Any], savename: str) -> None:
         md += "| Metric | Value |\n|--------|-------|\n"
         for metric, value in rows.items():
             md += f"| {metric} | {value:.4f} |\n"
-        with open(savename, "w") as f:
+        with Path(savename).open("w") as f:
             f.write(md)
         logger.info("Saved statistics to %s (Markdown)", savename)
