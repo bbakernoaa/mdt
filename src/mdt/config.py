@@ -8,7 +8,7 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-VALID_ZARR_BACKENDS = {"kerchunk_json", "kerchunk_parquet", "icechunk"}
+VALID_ZARR_BACKENDS = {"kerchunk_json", "kerchunk_parquet", "icechunk", "zarr"}
 
 
 class ConfigParser:
