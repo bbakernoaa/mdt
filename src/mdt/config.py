@@ -72,9 +72,9 @@ class ConfigParser:
                                 f"unsupported zarr_store.backend '{backend}'. "
                                 f"Supported: {sorted(VALID_ZARR_BACKENDS)}"
                             )
-                        if backend == "icechunk" and not zarr_store.get("icechunk_repo"):
+                        if backend == "icechunk" and not (zarr_store.get("icechunk_url") or zarr_store.get("icechunk_repo")):
                             raise ValueError(
-                                f"Configuration validation failed: Data source '{name}': 'icechunk_repo' is required for 'icechunk' backend."
+                                f"Configuration validation failed: Data source '{name}': 'icechunk_repo' is required for 'icechunk' backend (preferred key: 'icechunk_url')."
                             )
 
         if "pairing" in self.config:

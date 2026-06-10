@@ -24,6 +24,7 @@ _enabled_kwargs = st.fixed_dictionaries(
     },
     optional={
         "icechunk_repo": st.text(min_size=1, max_size=80),
+        "icechunk_url": st.text(min_size=1, max_size=80),
     },
 )
 
@@ -32,6 +33,7 @@ _virtualizarr_keys = {
     "use_virtualizarr",
     "virtualizarr_backend",
     "store_path",
+    "icechunk_url",
     "icechunk_repo",
     "use_icechunk",
     "max_scan_attempts",
@@ -64,8 +66,7 @@ def _make_mock_dataset():
 def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
     """When zarr_store is enabled, monetio.load() SHALL receive.
 
-    use_virtualizarr, virtualizarr_backend, store_path, and (when present)
-    icechunk_repo.
+    use_virtualizarr/store_path and MonetIO-conformant icechunk args.
     """
     combined_kwargs = {**extra_kwargs, **vz_kwargs}
 
@@ -84,12 +85,16 @@ def test_enabled_forwards_virtualizarr_params(vz_kwargs, extra_kwargs):
 
     # Required VirtualiZarr keys must be present
     assert call_kwargs["use_virtualizarr"] is True
-    assert call_kwargs["virtualizarr_backend"] == vz_kwargs["virtualizarr_backend"]
     assert call_kwargs["store_path"] == vz_kwargs["store_path"]
+    assert "virtualizarr_backend" not in call_kwargs
 
-    # icechunk_repo must be present when it was in the input
-    if "icechunk_repo" in vz_kwargs:
-        assert call_kwargs["icechunk_repo"] == vz_kwargs["icechunk_repo"]
+    if vz_kwargs["virtualizarr_backend"] == "icechunk":
+        assert call_kwargs.get("use_icechunk") is True
+
+    # Legacy/new icechunk key is normalized to icechunk_url for monetio call.
+    expected_icechunk = vz_kwargs.get("icechunk_url") or vz_kwargs.get("icechunk_repo")
+    if expected_icechunk:
+        assert call_kwargs["icechunk_url"] == expected_icechunk
 
 
 @given(extra_kwargs=_non_vz_kwargs)
@@ -353,3 +358,25 @@ class TestLoadDataLogging:
         mock_icechunk.Repository.open.assert_called_once_with("s3://repo")
         mock_open_zarr.assert_called_once_with("mock_store", consolidated=False, chunks={})
         assert res == mock_ds
+
+
+def test_start_end_date_are_expanded_to_dates_list():
+    """start_date/end_date are expanded to an inclusive daily dates list."""
+    kwargs = {
+        "start_date": "2023-08-01",
+        "end_date": "2023-08-03",
+        "product": "aerosol",
+    }
+    mock_ds = _make_mock_dataset()
+    mock_monetio = MagicMock()
+    mock_monetio.load = MagicMock(return_value=mock_ds)
+
+    with patch.dict("sys.modules", {"monetio": mock_monetio}), patch("mdt.tasks.data.update_history", side_effect=lambda ds, msg: ds):
+        from mdt.tasks.data import load_data
+
+        load_data("gefs_model", "gefs", kwargs)
+
+    call_kwargs = mock_monetio.load.call_args[1]
+    assert "start_date" not in call_kwargs
+    assert "end_date" not in call_kwargs
+    assert call_kwargs["dates"] == ["2023-08-01", "2023-08-02", "2023-08-03"]

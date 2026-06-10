@@ -80,7 +80,6 @@ class PrefectEngine(Engine):
     def __init__(self, dag: nx.DiGraph, config: "ConfigParser"):
         self.dag = dag
         self.config = config
-        self.client: Any = None
         self.clusters: Dict[str, Any] = {}
 
     def _setup_dask_clusters(self) -> Any:
@@ -118,7 +117,6 @@ class PrefectEngine(Engine):
             host="0.0.0.0",  # noqa: S104 — Allow external connections
         )
         scheduler_address = primary_cluster.scheduler_address
-        self.client = dask.distributed.Client(primary_cluster)
 
         for cluster_name, cfg in clusters_cfg.items():
             mode = cfg.get("mode", "local")
@@ -221,21 +219,32 @@ class PrefectEngine(Engine):
         use_dask_runner = len(clusters_cfg) > 1 or any(
             cfg.get("mode", "local") != "local" or cfg.get("workers", 1) > 1 for cfg in clusters_cfg.values()
         )
+        serialize_pair_tasks = all(cfg.get("mode", "local") == "local" for cfg in clusters_cfg.values())
+
+        def _resolve_output(value: Any) -> Any:
+            if hasattr(value, "result") and callable(value.result):
+                return value.result()
+            return value
+
+        # Snapshot mutable engine state into local variables so the flow closure
+        # does not capture `self` (which may hold non-picklable Dask client state).
+        dag = self.dag
 
         # Define the Prefect flow inline to capture the instance variables
         @flow(name="MDT Verification Workflow")  # type: ignore
         def mdt_flow() -> Dict[str, Any]:
             # Dictionary to store the output futures of each task
             task_outputs: Dict[str, Any] = {}
+            last_pair_future: Any = None
 
             # Use topological sort to process nodes in the correct dependency order
-            for node_id in nx.topological_sort(self.dag):
-                node_data = self.dag.nodes[node_id]
+            for node_id in nx.topological_sort(dag):
+                node_data = dag.nodes[node_id]
                 task_type = node_data["task_type"]
                 target_cluster = node_data.get("cluster")
 
                 # Retrieve the inputs from the dependencies that have already run
-                predecessors = list(self.dag.predecessors(node_id))
+                predecessors = list(dag.predecessors(node_id))
 
                 # We will use Prefect's `.with_options` to inject standard Dask resources.
                 # If target_cluster is None, default to "COMPUTE"
@@ -266,22 +275,42 @@ class PrefectEngine(Engine):
 
                         # Resolve node IDs from the actual predecessors in the DAG
                         # We look for nodes where the 'name' attribute matches the requested source/target names
-                        source_node_id = next((p for p in predecessors if self.dag.nodes[p].get("name") == source_name), None)
-                        target_node_id = next((p for p in predecessors if self.dag.nodes[p].get("name") == target_name), None)
+                        source_node_id = next((p for p in predecessors if dag.nodes[p].get("name") == source_name), None)
+                        target_node_id = next((p for p in predecessors if dag.nodes[p].get("name") == target_name), None)
 
                         if not source_node_id or not target_node_id:
                             logger.error(
                                 f"Failed to resolve predecessors for pairing '{node_id}'. Source: {source_node_id}, Target: {target_node_id}"
                             )
 
-                        future = p_pair_data.submit(
-                            name=node_data["name"],
-                            method=node_data["method"],
-                            source_data=task_outputs.get(source_node_id) if source_node_id else None,
-                            target_data=task_outputs.get(target_node_id) if target_node_id else None,
-                            kwargs=node_data["kwargs"],
-                        )
-                        task_outputs[node_id] = future
+                        source_output = task_outputs.get(source_node_id) if source_node_id else None
+                        target_output = task_outputs.get(target_node_id) if target_node_id else None
+
+                        if serialize_pair_tasks:
+                            if last_pair_future is not None:
+                                _resolve_output(last_pair_future)
+
+                            # Keep Monet pairing on the flow thread for local runs.
+                            # This avoids ESMF VM/thread initialization issues in Prefect workers
+                            # while preserving the same pairing implementation path.
+                            pair_result = prefect_pair_data(
+                                name=node_data["name"],
+                                method=node_data["method"],
+                                source_data=_resolve_output(source_output),
+                                target_data=_resolve_output(target_output),
+                                kwargs=node_data["kwargs"],
+                            )
+                            task_outputs[node_id] = pair_result
+                            last_pair_future = pair_result
+                        else:
+                            future = p_pair_data.submit(
+                                name=node_data["name"],
+                                method=node_data["method"],
+                                source_data=source_output,
+                                target_data=target_output,
+                                kwargs=node_data["kwargs"],
+                            )
+                            task_outputs[node_id] = future
 
                     elif task_type == "combine_paired_data":
                         # Collect all inputs from predecessors (pairing tasks)
@@ -351,7 +380,7 @@ class PrefectEngine(Engine):
         for node_id, future in task_futures.items():
             try:
                 # This will block until the specific task is done.
-                final_results[node_id] = future.result()
+                final_results[node_id] = _resolve_output(future)
             except Exception as e:
                 logger.error(f"Task {node_id} failed: {e}")
                 final_results[node_id] = e

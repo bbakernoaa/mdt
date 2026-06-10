@@ -30,7 +30,7 @@ MDT supports virtualizing large datasets to enable efficient, random access with
 *   **`enabled`**: Set to `true` to enable virtualization.
 *   **`backend`**: The virtualization engine to use (`kerchunk_json`, `kerchunk_parquet`, `icechunk`, or `zarr`).
 *   **`store_path`**: The local or cloud path where the virtual index or Zarr store is located.
-*   **`icechunk_repo`**: (Required for `icechunk`) The path to the Icechunk repository.
+*   **`icechunk_url`**: (Required for `icechunk`) The path/URL to the Icechunk repository. This is user/environment specific (do not copy example values literally). Legacy key `icechunk_repo` is still accepted for backward compatibility.
 *   **`existing`**: (Optional) If `true`, MDT will attempt to load an existing Zarr or Icechunk store directly instead of generating virtual references.
 *   **`zarr_kwargs`**: (Optional) Additional keyword arguments passed to `xarray.open_zarr`.
 *   **`max_scan_attempts`**: (Optional) Number of retry attempts when scanning GRIB2 files (default: reader-specific).
@@ -57,7 +57,7 @@ data:
     zarr_store:
       enabled: true
       backend: "icechunk"
-      icechunk_repo: "s3://my-bucket/gefs-repo"
+      icechunk_url: "s3://<your-bucket>/<your-gefs-icechunk-repo>"
 
   # Example pointing to an existing Zarr store (e.g. preprocessed AERONET)
   aeronet_zarr:

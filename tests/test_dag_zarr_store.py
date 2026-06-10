@@ -176,10 +176,10 @@ class TestDAGBuilderZarrStoreEnabled:
 
 
 class TestDAGBuilderIcechunkRepo:
-    """Tests that icechunk_repo is included only when present."""
+    """Tests that the icechunk path uses MonetIO-facing kwargs only."""
 
     def test_icechunk_params_included(self):
-        """icechunk-specific params are merged into kwargs when provided."""
+        """Icechunk-specific params are merged into MonetIO-facing kwargs."""
         config_dict = {
             "my_model": {
                 "type": "cmaq",
@@ -195,12 +195,13 @@ class TestDAGBuilderIcechunkRepo:
         dag = DAGBuilder(config).build()
         kw = dag.nodes["load_my_model"]["kwargs"]
 
-        assert kw["use_virtualizarr"] is True
-        assert kw["virtualizarr_backend"] == "icechunk"
         assert kw["use_icechunk"] is True
-        assert kw["icechunk_repo"] == "s3://bucket/repo"
+        assert kw["icechunk_url"] == "s3://bucket/repo"
+        assert "use_virtualizarr" not in kw
+        assert "virtualizarr_backend" not in kw
+        assert "icechunk_repo" not in kw
         assert kw["max_scan_attempts"] == 3
-        assert kw["store_path"] == "./zarr_stores/my_model/"
+        assert "store_path" not in kw
 
     def test_existing_zarr_included(self):
         """Existing and zarr_kwargs are merged into kwargs when provided."""
@@ -226,7 +227,7 @@ class TestDAGBuilderIcechunkRepo:
         assert kw["zarr_kwargs"] == {"consolidated": True}
 
     def test_icechunk_repo_included(self):
-        """icechunk_repo is merged into kwargs when provided."""
+        """icechunk_repo alias is normalized to icechunk_url in kwargs."""
         config_dict = {
             "my_model": {
                 "type": "cmaq",
@@ -241,10 +242,11 @@ class TestDAGBuilderIcechunkRepo:
         dag = DAGBuilder(config).build()
         kw = dag.nodes["load_my_model"]["kwargs"]
 
-        assert kw["use_virtualizarr"] is True
-        assert kw["virtualizarr_backend"] == "icechunk"
-        assert kw["icechunk_repo"] == "s3://bucket/repo"
-        assert kw["store_path"] == "./zarr_stores/my_model/"
+        assert kw["use_icechunk"] is True
+        assert kw["icechunk_url"] == "s3://bucket/repo"
+        assert "virtualizarr_backend" not in kw
+        assert "icechunk_repo" not in kw
+        assert "store_path" not in kw
 
     def test_icechunk_repo_absent_for_kerchunk(self):
         """icechunk_repo is NOT in kwargs when backend is not icechunk."""

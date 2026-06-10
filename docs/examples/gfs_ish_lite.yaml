@@ -4,10 +4,17 @@ data:
     kwargs:
       dates: "2023-08-01"
       lead_time: [0, 3, 6, 9, 12, 15, 18, 21, 24]
+      # grib2io/xarray backend filtering compatible with PR 246 workflows
+      filters:
+        typeOfFirstFixedSurface: 103 # 2 m above ground level
     zarr_store:
       enabled: true
       backend: "icechunk"
-      icechunk_repo: "s3://my-bucket/gfs-repo"
+      # Required only when backend is "icechunk"; set to your own repo path.
+      icechunk_url: "s3://<your-bucket>/<your-gfs-icechunk-repo>"
+      max_scan_attempts: 5
+      network_timeout: 60.0
+      max_concurrent_requests: 16
 
   ish_lite_obs:
     type: "ish_lite"

@@ -38,14 +38,18 @@ _DISPATCH_BLOCKS: dict[str, str] = {
     "load_data": (
         "    zarr_enabled = '%ZARR_STORE_ENABLED%'\n"
         "    if zarr_enabled == 'true':\n"
-        "        kwargs['use_virtualizarr'] = True\n"
-        "        kwargs['virtualizarr_backend'] = '%ZARR_STORE_BACKEND%'\n"
+        "        zarr_backend = '%ZARR_STORE_BACKEND%'\n"
+        "        if zarr_backend == 'icechunk':\n"
+        "            kwargs['use_icechunk'] = True\n"
+        "        else:\n"
+        "            kwargs['use_virtualizarr'] = True\n"
+        "            kwargs['virtualizarr_backend'] = zarr_backend\n"
         "        zarr_path = '%ZARR_STORE_PATH%'\n"
-        "        if zarr_path:\n"
+        "        if zarr_path and zarr_backend != 'icechunk':\n"
         "            kwargs['store_path'] = zarr_path\n"
-        "        icechunk_repo = '%ZARR_STORE_ICECHUNK_REPO%'\n"
-        "        if icechunk_repo:\n"
-        "            kwargs['icechunk_repo'] = icechunk_repo\n"
+        "        icechunk_url = '%ZARR_STORE_ICECHUNK_URL%'\n"
+        "        if icechunk_url:\n"
+        "            kwargs['icechunk_url'] = icechunk_url\n"
         "    from mdt.tasks.data import load_data\n"
         "    load_data(name=task_name, dataset_type=dataset_type, kwargs=kwargs)"
     ),
@@ -258,7 +262,7 @@ class EcFlowEngine(Engine):
             task_node.add_variable("ZARR_STORE_ENABLED", "false")
             task_node.add_variable("ZARR_STORE_BACKEND", "")
             task_node.add_variable("ZARR_STORE_PATH", "")
-            task_node.add_variable("ZARR_STORE_ICECHUNK_REPO", "")
+            task_node.add_variable("ZARR_STORE_ICECHUNK_URL", "")
 
             if task_type == "load_data":
                 node_kwargs = data.get("kwargs") or {}
@@ -268,15 +272,15 @@ class EcFlowEngine(Engine):
                 )
                 task_node.add_variable(
                     "ZARR_STORE_BACKEND",
-                    node_kwargs.get("virtualizarr_backend", ""),
+                    "icechunk" if node_kwargs.get("use_icechunk", False) else node_kwargs.get("virtualizarr_backend", ""),
                 )
                 task_node.add_variable(
                     "ZARR_STORE_PATH",
                     node_kwargs.get("store_path", ""),
                 )
                 task_node.add_variable(
-                    "ZARR_STORE_ICECHUNK_REPO",
-                    node_kwargs.get("icechunk_repo", ""),
+                    "ZARR_STORE_ICECHUNK_URL",
+                    node_kwargs.get("icechunk_url", ""),
                 )
 
         # --- trigger expressions from DAG edges ---

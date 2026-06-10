@@ -23,6 +23,27 @@ def test_load_data_provenance(mocker):
     assert "Loaded dataset 'test_data'" in res.attrs["history"]
 
 
+def test_load_data_icap_date_alias_to_dates(mocker):
+    """Ensure MDT maps legacy `date` to reader-expected `dates` for icap_mme."""
+    ds = xr.Dataset({"val": (("x"), [1, 2, 3])})
+    mock_load = mocker.patch("monetio.load", return_value=ds)
+
+    load_data(
+        "icap_mme_model",
+        "icap_mme",
+        {
+            "date": "2023-01-04",
+            "product": "MMC",
+            "data_var": "modeaod550",
+        },
+    )
+
+    call_kwargs = mock_load.call_args.kwargs
+    assert "dates" in call_kwargs
+    assert call_kwargs["dates"] == "2023-01-04"
+    assert "date" not in call_kwargs
+
+
 def test_pair_data_double_check(mocker):
     """Test pair_data with both Eager (NumPy) and Lazy (Dask) data (Aero Protocol)."""
     # Setup mock data (NumPy)
