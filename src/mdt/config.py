@@ -112,6 +112,31 @@ class ConfigParser:
                 if "input" not in details:
                     raise ValueError(f"Configuration validation failed: Plot task '{name}' must specify an 'input' key.")
 
+        if "reductions" in self.config:
+            if not isinstance(self.config["reductions"], dict):
+                raise ValueError(
+                    f"Configuration validation failed: 'reductions' section must be a dictionary, got {type(self.config['reductions']).__name__}."
+                )
+            for name, details in self.config["reductions"].items():
+                if not isinstance(details, dict):
+                    raise ValueError(f"Configuration validation failed: Reduction task '{name}' must be a dictionary, got {type(details).__name__}.")
+                if "input" not in details or "dim" not in details:
+                    raise ValueError(f"Configuration validation failed: Reduction task '{name}' must specify 'input' and 'dim' fields.")
+
+        if "save" in self.config:
+            if not isinstance(self.config["save"], dict):
+                raise ValueError(
+                    f"Configuration validation failed: 'save' section must be a dictionary, got {type(self.config['save']).__name__}."
+                )
+            for name, details in self.config["save"].items():
+                if not isinstance(details, dict):
+                    raise ValueError(f"Configuration validation failed: Save task '{name}' must be a dictionary, got {type(details).__name__}.")
+                if "input" not in details or "backend" not in details or "url" not in details:
+                    raise ValueError(f"Configuration validation failed: Save task '{name}' must specify 'input', 'backend', and 'url' fields.")
+                backend = details["backend"]
+                if backend not in {"icechunk", "zarr"}:
+                    raise ValueError(f"Configuration validation failed: Save task '{name}': unsupported backend '{backend}'. Supported: 'icechunk', 'zarr'.")
+
         self._validate_region_masking()
 
     def _validate_region_masking(self) -> None:
@@ -170,6 +195,16 @@ class ConfigParser:
     def plots(self) -> Dict[str, Any]:
         """dict: The 'plots' section of the configuration."""
         return cast(Dict[str, Any], self.config.get("plots", {}))
+
+    @property
+    def reductions(self) -> Dict[str, Any]:
+        """dict: The 'reductions' section of the configuration."""
+        return cast(Dict[str, Any], self.config.get("reductions", {}))
+
+    @property
+    def save(self) -> Dict[str, Any]:
+        """dict: The 'save' section of the configuration."""
+        return cast(Dict[str, Any], self.config.get("save", {}))
 
     @property
     def orchestrator(self) -> str:

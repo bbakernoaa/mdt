@@ -130,3 +130,69 @@ def test_compute_statistics_double_check(mocker):
     # Double-Check: Results must be identical
     assert float(results_lazy["RMSE"].compute()) == float(results_eager["RMSE"])
     assert "Computed RMSE" in results_lazy["RMSE"].attrs["history"]
+
+
+def test_load_data_wind_speed_calculation(mocker):
+    """Test that load_data dynamically calculates WSPD_10maboveground from wind components."""
+    # 1. Test with UGRD and VGRD
+    ds1 = xr.Dataset({"UGRD": (("x"), [3.0]), "VGRD": (("x"), [4.0])})
+    mocker.patch("monetio.load", return_value=ds1)
+    res1 = load_data("test_wind_ugrd", "gfs", {})
+    assert "WSPD_10maboveground" in res1.variables
+    np.testing.assert_allclose(res1["WSPD_10maboveground"].values, [5.0])
+    assert res1["WSPD_10maboveground"].attrs["units"] == "m s-1"
+
+    # 2. Test with u_wind and v_wind
+    ds2 = xr.Dataset({"u_wind": (("x"), [3.0]), "v_wind": (("x"), [4.0])})
+    mocker.patch("monetio.load", return_value=ds2)
+    res2 = load_data("test_wind_u_wind", "gfs", {})
+    assert "WSPD_10maboveground" in res2.variables
+    np.testing.assert_allclose(res2["WSPD_10maboveground"].values, [5.0])
+    assert res2["WSPD_10maboveground"].attrs["units"] == "m s-1"
+
+
+def test_pair_data_time_sorting(mocker):
+    """Test that pair_data correctly sorts the paired dataset by the time dimension."""
+    # Create an unsorted paired dataset
+    times = pd.to_datetime(["2023-08-01 05:00", "2023-08-01 02:00", "2023-08-01 08:00"])
+    paired_unsorted = xr.Dataset({"val": (("time"), [1, 2, 3])}, coords={"time": times})
+
+    # Setup dummy source and target datasets
+    src = xr.Dataset({"UGRD": (("time"), [1, 2, 3])}, coords={"time": times})
+    tgt = xr.Dataset({"ws": (("time"), [1, 2, 3])}, coords={"time": times})
+
+    # Force has_xregrid to True and mock monet.pair to avoid esmpy dependency
+    mocker.patch("monet.accessors.base.has_xregrid", True)
+    mocker.patch("monet.util.resample.has_xregrid", True)
+    mocker.patch("monet.util.combinetool.pair", return_value=paired_unsorted)
+
+    # Call pair_data
+    res = pair_data("test_sorting", "nearest", src, tgt, {})
+
+    # Verify monotonic time index
+    assert res.indexes["time"].is_monotonic_increasing
+    np.testing.assert_allclose(res["val"].values, [2, 1, 3])  # sorted as 02:00, 05:00, 08:00
+
+
+def test_pair_data_preserves_point_observation_times(mocker):
+    """Test that pair_data does NOT drop duplicate time entries for point observation datasets."""
+    # Create point observation dataset with duplicate times (different stations)
+    times = pd.to_datetime(["2023-08-01 00:00", "2023-08-01 00:00", "2023-08-01 00:00"])
+    # Point datasets do not have 'x' or 'y' dimensions
+    point_ds = xr.Dataset({"val": (("time"), [1, 2, 3])}, coords={"time": times})
+
+    # Setup dummy source dataset (gridded)
+    src = xr.Dataset({"UGRD": (("y", "x"), [[1]])}, coords={"y": [0], "x": [0]})
+
+    # Force has_xregrid to True and mock monet.pair to avoid esmpy dependency
+    mocker.patch("monet.accessors.base.has_xregrid", True)
+    mocker.patch("monet.util.resample.has_xregrid", True)
+    mocker.patch("monet.util.combinetool.pair", return_value=point_ds)
+
+    # Call pair_data
+    res = pair_data("test_preservation", "nearest", src, point_ds, {})
+
+    # Verify that duplicate times are preserved (length remains 3, not collapsed to 1)
+    assert len(res["time"]) == 3
+
+

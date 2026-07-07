@@ -29,6 +29,8 @@ _FAMILY_MAP: dict[str, str] = {
     "combine_paired_data": "combine",
     "compute_statistics": "statistics",
     "generate_plot": "plot",
+    "calculate_reduction": "reduction",
+    "save_data": "save",
 }
 
 
@@ -74,6 +76,15 @@ _DISPATCH_BLOCKS: dict[str, str] = {
         "    from mdt.tasks.plotting import generate_plot\n"
         "    generate_plot(name=task_name, plot_type=plot_type,\n"
         "                  input_data=None, kwargs=kwargs)"
+    ),
+    "calculate_reduction": (
+        "    from mdt.tasks.reductions import calculate_reduction\n"
+        "    calculate_reduction(obj=None, method=method, dim=dim,\n"
+        "                        force_weighted=force_weighted, **kwargs)"
+    ),
+    "save_data": (
+        "    from mdt.tasks.data import save_data\n"
+        "    save_data(name=task_name, data=None, backend=backend, url=url, kwargs=kwargs)"
     ),
 }
 
@@ -254,8 +265,11 @@ class EcFlowEngine(Engine):
             task_node.add_variable("PLOT_TYPE", data.get("plot_type") or "")
             task_node.add_variable("METHOD", data.get("method") or "")
             task_node.add_variable("DIM", data.get("dim") or "")
+            task_node.add_variable("FORCE_WEIGHTED", str(data.get("force_weighted") or "").lower())
             task_node.add_variable("SOURCES", json.dumps(data.get("sources") or []))
             task_node.add_variable("CLUSTER", data.get("cluster") or "")
+            task_node.add_variable("BACKEND", data.get("backend") or "")
+            task_node.add_variable("URL", data.get("url") or "")
 
             # Always define ZARR_* so ecFlow token substitution succeeds for all
             # generated wrappers, even for non-load tasks.

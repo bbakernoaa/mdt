@@ -281,7 +281,11 @@ def _generate_single_plot(
 
 def _find_plot_class(plot_type: str) -> Any:
     """
-    Dynamically discover a plot class in monet_plots based on plot_type.
+    Dynamically discover any plot class in monet_plots based on plot_type.
+
+    Supports both case-insensitive, dash/underscore flexible matches, and 
+    automatically walks all monet_plots.plots submodules to register new plot
+    classes on-the-fly.
 
     Parameters
     ----------
@@ -298,51 +302,71 @@ def _find_plot_class(plot_type: str) -> Any:
     ValueError
         If no matching plot class is found.
     """
+    import pkgutil
+    import importlib
+    import sys
     import monet_plots
 
-    # Priority mapping for common names
-    mapping = {
+    # 1. Dynamically import all submodules under monet_plots.plots
+    try:
+        import monet_plots.plots as m_plots
+        for _, module_name, _ in pkgutil.iter_modules(m_plots.__path__):
+            try:
+                importlib.import_module(f"monet_plots.plots.{module_name}")
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("Could not dynamically import monet_plots submodules: %s", e)
+
+    # 2. Search for the class inside all loaded monet_plots.plots submodules
+    # Standardize types and attributes to be alphanumeric-only for maximum naming flexibility
+    cleaned_type = plot_type.lower().replace("plot", "").replace("_", "").replace("-", "")
+
+    # Priority mapping for common types to exact classes
+    priority_map = {
         "spatial": "SpatialImshowPlot",
-        "scatter": "ScatterPlot",
-        "timeseries": "TimeSeriesPlot",
-        "taylor": "TaylorDiagramPlot",
-        "spatial_bias_scatter": "SpatialBiasScatterPlot",
-        "radar": "RadarPlot",
-        "soccer": "SoccerPlot",
-        "timeseriesstat": "TimeSeriesStatsPlot",
-        "diurnal_error": "DiurnalErrorPlot",
-        "conditional_bias": "ConditionalBiasPlot",
-        "kde": "KDEPlot",
+        "spatial_grid": "SpatialFacetGridPlot",
+        "facet_grid": "FacetGridPlot",
     }
+    priority_target = priority_map.get(plot_type.lower())
 
-    class_name = mapping.get(plot_type.lower())
-    if class_name and hasattr(monet_plots, class_name):
-        cls = getattr(monet_plots, class_name)
-        logger.debug(f"Found plot class '{class_name}' for type '{plot_type}' via mapping.")
-        return cls
+    for mod_name, module in list(sys.modules.items()):
+        if mod_name.startswith("monet_plots.plots."):
+            for attr in dir(module):
+                # Filter to only plotting classes or specific named wrappers
+                if attr.endswith("Plot") or attr in ("Meteogram", "UpperAir", "VerticalSlice", "Windrose"):
+                    if priority_target and attr == priority_target:
+                        cls = getattr(module, attr)
+                        if callable(cls):
+                            logger.debug("Discovered priority plot class '%s' in module '%s' for type '%s'", attr, mod_name, plot_type)
+                            return cls
 
-    # Try importing from submodules directly (some plots aren't in __init__)
-    if class_name:
-        try:
-            from monet_plots.plots import radar, soccer, timeseries
+                    cleaned_attr = attr.lower().replace("plot", "").replace("_", "").replace("-", "")
+                    if cleaned_attr == cleaned_type or attr.lower() == plot_type.lower():
+                        cls = getattr(module, attr)
+                        if callable(cls):
+                            logger.debug("Discovered plot class '%s' in module '%s' for type '%s'", attr, mod_name, plot_type)
+                            return cls
 
-            submodule_map = {
-                "RadarPlot": radar.RadarPlot,
-                "SoccerPlot": soccer.SoccerPlot,
-                "TimeSeriesStatsPlot": timeseries.TimeSeriesStatsPlot,
-            }
-            if class_name in submodule_map:
-                logger.debug(f"Found plot class '{class_name}' via submodule import.")
-                return submodule_map[class_name]
-        except ImportError:
-            pass
+    # Fallback to substring match across loaded modules if no exact match was found
+    for mod_name, module in list(sys.modules.items()):
+        if mod_name.startswith("monet_plots.plots."):
+            for attr in dir(module):
+                if attr.endswith("Plot") or attr in ("Meteogram", "UpperAir", "VerticalSlice", "Windrose"):
+                    cleaned_attr = attr.lower().replace("plot", "").replace("_", "").replace("-", "")
+                    if cleaned_type in cleaned_attr:
+                        cls = getattr(module, attr)
+                        if callable(cls):
+                            logger.debug("Discovered plot class '%s' in module '%s' via substring match for type '%s'", attr, mod_name, plot_type)
+                            return cls
 
-    # Fallback: Try to find a class that matches the plot_type string (case-insensitive)
+    # Fallback: Search top-level monet_plots module attributes
     for attr in dir(monet_plots):
         if attr.lower() == plot_type.lower() or attr.lower() == f"{plot_type.lower()}plot":
             cls = getattr(monet_plots, attr)
-            logger.debug(f"Found plot class '{attr}' for type '{plot_type}' via fallback search.")
-            return cls
+            if callable(cls):
+                logger.debug("Discovered fallback plot class '%s' at top-level for type '%s'", attr, plot_type)
+                return cls
 
     raise ValueError(f"Could not find a plot class in monet_plots for type: '{plot_type}'")
 
@@ -362,6 +386,7 @@ def _generate_static_plot(
     title_main = kwargs.pop("title", None)
     requested_global_stat = kwargs.pop("global_stat", None)
     auto_title = kwargs.pop("auto_title", True)
+    spatial_mean = kwargs.pop("spatial_mean", False) or kwargs.pop("spatial_average", False)
 
     try:
         plot_class = _find_plot_class(plot_type)
@@ -391,6 +416,110 @@ def _generate_static_plot(
                 columns_spec.append((col, col, None))
 
         if columns_spec and len(columns_spec) > 1:
+            if plot_type == "profile":
+                import xarray as xr
+                var2_val = kwargs.get("var2", "press")
+                first_col, first_label, first_color = columns_spec[0]
+                
+                plot_data = data
+                # Preserve 1D vertical sounding coordinates and variables before taking temporal mean over valid_time
+                preserved_vars = {}
+                for c in ("press", "temp"):
+                    if c in plot_data:
+                        val = plot_data[c]
+                        if "valid_time" in val.dims:
+                            preserved_vars[c] = val.isel(valid_time=0, drop=True)
+                        else:
+                            preserved_vars[c] = val
+
+                if "valid_time" in plot_data.dims:
+                    plot_data = plot_data.mean(dim="valid_time", skipna=True)
+                
+                # Re-assign preserved variables and coordinates
+                for c, val in preserved_vars.items():
+                    if c in plot_data.coords:
+                        plot_data = plot_data.assign_coords({c: val})
+                    else:
+                        plot_data[c] = val
+
+                # 1. Find the target/observation pressure coordinate
+                target_press_name = None
+                for name in ("press", "pressure"):
+                    if name in plot_data:
+                        target_press_name = name
+                        break
+
+                # 2. Find and interpolate the GFS model vertical dimension
+                if target_press_name is not None:
+                    target_press = plot_data[target_press_name]
+                    for col in list(plot_data.variables.keys()):
+                        if col in ("temperature", "TMP_2maboveground", "TMP"):
+                            # Find matching vertical dimension name
+                            vertical_dim = None
+                            for dim in ("isobaric_surface", "isobaric", "isobaricInhPa", "plev", "lev", "level", "pressure"):
+                                if dim in plot_data[col].dims:
+                                    vertical_dim = dim
+                                    break
+                            
+                            if vertical_dim is not None:
+                                try:
+                                    gfs_vals = plot_data[vertical_dim].values
+                                    igra_vals = target_press.values
+                                    
+                                    # Align Pa vs hPa unit differences
+                                    aligned_target_press = target_press
+                                    if gfs_vals.max() < 2000 and igra_vals.max() > 10000:
+                                        aligned_target_press = aligned_target_press / 100.0
+                                        logger.info("Scaled IGRA pressure levels from Pa to hPa for GFS alignment.")
+                                    elif gfs_vals.max() > 10000 and igra_vals.max() < 2000:
+                                        aligned_target_press = aligned_target_press * 100.0
+                                        logger.info("Scaled IGRA pressure levels from hPa to Pa for GFS alignment.")
+
+                                    # Perform the 1D interpolation
+                                    plot_data[col] = plot_data[col].interp({vertical_dim: aligned_target_press})
+                                    logger.info("Successfully interpolated GFS profile along '%s' to IGRA '%s' levels.", vertical_dim, target_press_name)
+                                except Exception as e:
+                                    logger.warning("Failed to vertically interpolate GFS profile to IGRA: %s", e)
+
+                plot_obj = plot_class(data=plot_data, var1=plot_data[first_col], var2=plot_data[var2_val], label=first_label)
+                if hasattr(plot_obj, "plot"):
+                    plot_obj.plot(color=first_color if first_color else "black")
+                    
+                for col, label, color in columns_spec[1:]:
+                    if col in plot_data:
+                        # Defense-in-depth: Ensure shapes align before plotting to prevent crashes
+                        if plot_data[col].shape != plot_data[var2_val].shape:
+                            logger.warning(
+                                "Skipping overlay plot for column '%s' because its shape %s "
+                                "does not match vertical coordinate '%s' shape %s.",
+                                col, plot_data[col].shape, var2_val, plot_data[var2_val].shape
+                            )
+                            continue
+                        plot_obj.ax.plot(plot_data[col], plot_data[var2_val], label=label, color=color if color else "red")
+                
+                plot_obj.ax.set_ylabel(var2_val)
+                
+                # Meteorological standard: Plot pressure coordinate on log scale and invert Y-axis (height decreases as pressure decreases)
+                if "press" in var2_val.lower() or "isobaric" in var2_val.lower():
+                    try:
+                        plot_obj.ax.set_yscale("log")
+                        plot_obj.ax.invert_yaxis()
+                        import matplotlib.ticker as ticker
+                        plot_obj.ax.yaxis.set_major_formatter(ticker.ScalarFormatter())
+                        plot_obj.ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+                        logger.info("Configured logarithmic and reversed vertical pressure coordinate on profile plot Y-axis.")
+                    except Exception as e:
+                        logger.warning("Could not set log scale or invert y-axis: %s", e)
+
+                plot_obj.ax.legend()
+                plot_obj.fig.tight_layout()
+                plot_obj.save(savename)
+                logger.info("Saved Track A profile plot '%s' (%d lines) to %s", name, len(columns_spec), savename)
+                
+                if hasattr(plot_obj, "close"):
+                    plot_obj.close()
+                return plot_obj
+
             # Multi-line overlay: create one plot with first variable, then overlay others
             constructor_keys = {"x", "plotargs", "fillargs", "title", "ylabel", "label"}
             constructor_kwargs = {k: v for k, v in kwargs.items() if k in constructor_keys}
@@ -515,8 +644,14 @@ def _generate_static_plot(
         # For spatial plots, reduce time dimension to mean (one value per station)
         import xarray as xr
 
-        if isinstance(data, xr.Dataset) and "time" in data.dims and plot_type in ("spatial_bias_scatter", "spatial"):
+        if isinstance(data, xr.Dataset) and "time" in data.dims and len(data.dims) > 1 and plot_type in ("spatial_bias_scatter", "spatial"):
             data = data.mean(dim="time", skipna=True)
+
+        # For timeseries plots of point datasets (where 'time' is the flat station-indexing dimension),
+        # optionally group by 'time' and take the mean to compute the spatial average timeseries across all sites.
+        if isinstance(data, xr.Dataset) and "time" in data.dims and len(data.dims) == 1 and plot_type == "timeseries" and spatial_mean:
+            data = data.groupby("time").mean(skipna=True)
+            logger.info("Computed spatial average timeseries across all sites for '%s'.", name)
 
         # SpatialImshow expects monotonic 1D map axes. Some regridded outputs
         # carry both 1D (lat/lon) and 2D (latitude/longitude) coordinates;

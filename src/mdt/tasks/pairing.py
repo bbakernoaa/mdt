@@ -67,6 +67,10 @@ def _drop_duplicate_time_entries(
 ) -> Union[xr.Dataset, xr.DataArray, pd.DataFrame]:
     """Drop duplicate time entries that break xarray alignment during pairing."""
     if isinstance(data, (xr.Dataset, xr.DataArray)):
+        # Never drop duplicate time entries for point observation datasets (non-gridded)
+        if "y" not in data.dims and "x" not in data.dims:
+            return data
+
         if "time" in data.indexes:
             time_index = data.indexes["time"]
             dup_count = int(time_index.duplicated().sum())
@@ -194,6 +198,19 @@ def pair_data(
         # Provenance Tracking
         msg = f"Paired using method '{method}' with params {kwargs}."
         paired_data = update_history(paired_data, msg)
+
+        # Sort by time to ensure monotonicity (important for subsequent resampling/plotting)
+        if isinstance(paired_data, xr.Dataset):
+            if "time" in paired_data.dims:
+                paired_data = paired_data.sortby("time")
+                logger.info("Sorted paired xarray dataset by 'time' dimension.")
+        elif isinstance(paired_data, pd.DataFrame):
+            if isinstance(paired_data.index, pd.DatetimeIndex):
+                paired_data = paired_data.sort_index()
+                logger.info("Sorted paired pandas dataframe by datetime index.")
+            elif "time" in paired_data.columns:
+                paired_data = paired_data.sort_values("time")
+                logger.info("Sorted paired pandas dataframe by 'time' column.")
 
         logger.info("Successfully paired data '%s'", name)
         return cast(Union[xr.Dataset, xr.DataArray, pd.DataFrame], paired_data)

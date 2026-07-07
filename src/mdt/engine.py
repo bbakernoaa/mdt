@@ -8,15 +8,41 @@ import networkx as nx
 
 from mdt.engine_registry import Engine
 from mdt.hpc import HPCProfileFactory
-from mdt.tasks.data import load_data
+from mdt.tasks.data import load_data, save_data
 from mdt.tasks.pairing import combine_paired_data, pair_data
 from mdt.tasks.plotting import generate_plot
+from mdt.tasks.reductions import calculate_reduction
 from mdt.tasks.statistics import compute_statistics
 
 if TYPE_CHECKING:
     from mdt.config import ConfigParser
 
 logger = logging.getLogger(__name__)
+
+
+def prefect_calculate_reduction(
+    name: str,
+    data: Any,
+    method: str,
+    dim: Any,
+    force_weighted: bool,
+    kwargs: Dict[str, Any],
+) -> Any:
+    """Prefect task wrapper for calculate_reduction."""
+    from prefect import get_run_logger
+
+    logger = get_run_logger()
+    logger.info(f"Reducing dataset '{name}' using method '{method}' over dim: {dim}")
+    return calculate_reduction(data, method, dim, force_weighted, **kwargs)
+
+
+def prefect_save_data(name: str, data: Any, backend: str, url: str, kwargs: Dict[str, Any]) -> Any:
+    """Prefect task wrapper for save_data."""
+    from prefect import get_run_logger
+
+    logger = get_run_logger()
+    logger.info(f"Saving dataset '{name}' using backend '{backend}' to '{url}'")
+    return save_data(name, data, backend, url, kwargs)
 
 
 def prefect_load_data(name: str, dataset_type: str, kwargs: Dict[str, Any]) -> Any:
@@ -208,6 +234,8 @@ class PrefectEngine(Engine):
         p_combine_paired_data = task(name="Combine Paired Data", cache_policy=NO_CACHE)(prefect_combine_paired_data)
         p_compute_statistics = task(name="Compute Statistics", cache_policy=NO_CACHE)(prefect_compute_statistics)
         p_generate_plot = task(name="Generate Plot", cache_policy=NO_CACHE)(prefect_generate_plot)
+        p_calculate_reduction = task(name="Calculate Reduction", cache_policy=NO_CACHE)(prefect_calculate_reduction)
+        p_save_data = task(name="Save Data", cache_policy=NO_CACHE)(prefect_save_data)
 
         from contextlib import nullcontext
 
@@ -351,6 +379,31 @@ class PrefectEngine(Engine):
                             name=node_data["name"],
                             plot_type=node_data["plot_type"],
                             input_data=task_outputs.get(input_node) if input_node else None,
+                            kwargs=node_data["kwargs"],
+                        )
+                        task_outputs[node_id] = future
+
+                    elif task_type == "calculate_reduction":
+                        # Only one predecessor (input)
+                        input_node = predecessors[0] if predecessors else None
+                        future = p_calculate_reduction.submit(
+                            name=node_data["name"],
+                            data=task_outputs.get(input_node) if input_node else None,
+                            method=node_data["method"],
+                            dim=node_data["dim"],
+                            force_weighted=node_data["force_weighted"],
+                            kwargs=node_data["kwargs"],
+                        )
+                        task_outputs[node_id] = future
+
+                    elif task_type == "save_data":
+                        # Only one predecessor (input)
+                        input_node = predecessors[0] if predecessors else None
+                        future = p_save_data.submit(
+                            name=node_data["name"],
+                            data=task_outputs.get(input_node) if input_node else None,
+                            backend=node_data["backend"],
+                            url=node_data["url"],
                             kwargs=node_data["kwargs"],
                         )
                         task_outputs[node_id] = future
