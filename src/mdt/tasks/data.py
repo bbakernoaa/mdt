@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+from collections.abc import Hashable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator
@@ -101,6 +102,29 @@ def _unsupported_option_name(error: BaseException) -> str | None:
     return None
 
 
+def _resolve_reader_class(dataset_type: str) -> Any:
+    """Resolve reader classes across modern and registry-based MonetIO versions."""
+    import importlib
+
+    import monetio
+    from monetio.readers.base import READER_REGISTRY
+
+    name = dataset_type
+    try:
+        from monetio._lazy import import_reader
+        from monetio._manifest import resolve
+    except ImportError:
+        modules = getattr(monetio, "_READER_MODULES", {})
+        module = modules.get(name) if isinstance(modules, dict) else None
+        if name not in READER_REGISTRY and module:
+            importlib.import_module(module, "monetio")
+    else:
+        spec = resolve(dataset_type)
+        name = spec.name
+        import_reader(dataset_type)
+    return READER_REGISTRY.get(name) or READER_REGISTRY.get(dataset_type)
+
+
 def _reader_accepts_as_xarray(dataset_type: str) -> bool:
     """Return True when the monetio reader for ``dataset_type`` declares ``as_xarray``.
 
@@ -115,13 +139,7 @@ def _reader_accepts_as_xarray(dataset_type: str) -> bool:
     import inspect
 
     try:
-        from monetio._lazy import import_reader
-        from monetio._manifest import resolve
-        from monetio.readers.base import READER_REGISTRY
-
-        spec = resolve(dataset_type)
-        import_reader(dataset_type)
-        reader_cls = READER_REGISTRY.get(spec.name) or READER_REGISTRY.get(dataset_type)
+        reader_cls = _resolve_reader_class(dataset_type)
     except Exception:
         logger.debug("Could not resolve reader for '%s'; assuming as_xarray is accepted.", dataset_type)
         return True
@@ -172,13 +190,9 @@ def _reader_supports_virtualizarr(dataset_type: str) -> bool:
     (assume ingestion is supported).
     """
     try:
-        from monetio._lazy import import_reader
-        from monetio._manifest import resolve
-        from monetio.readers.base import READER_REGISTRY, GriddedReader
+        from monetio.readers.base import GriddedReader
 
-        spec = resolve(dataset_type)
-        import_reader(dataset_type)
-        reader_cls = READER_REGISTRY.get(spec.name) or READER_REGISTRY.get(dataset_type)
+        reader_cls = _resolve_reader_class(dataset_type)
     except Exception:
         logger.debug("Could not resolve reader for '%s'; assuming VirtualiZarr is supported.", dataset_type)
         return True
@@ -192,7 +206,7 @@ def _reader_supports_virtualizarr(dataset_type: str) -> bool:
     return issubclass(reader_cls, GriddedReader)
 
 
-def _time_role(ds: xr.Dataset, configured: Any, standard_name: str, exclude: set[str] | None = None) -> str | None:
+def _time_role(ds: xr.Dataset, configured: Any, standard_name: str, exclude: set[Hashable] | None = None) -> Hashable | None:
     """Resolve one time coordinate from explicit policy or CF metadata."""
     candidates = [configured] if isinstance(configured, str) else list(configured or [])
     candidates.extend(name for name, var in ds.variables.items() if var.attrs.get("standard_name") == standard_name)
@@ -236,11 +250,9 @@ def _promote_time_coordinate(loaded_obj: xr.Dataset, name: str, policy: Dict[str
     ``forecast_reference_time`` and ``lead_time`` to variable names or ordered
     candidate-name lists. No reader-specific variable names are assumed.
     """
-    if not isinstance(loaded_obj, xr.Dataset):
-        return loaded_obj
     ds = loaded_obj
     policy = policy or {}
-    valid_name = _time_role(ds, policy.get("valid_time"), "time")
+    valid_name: Hashable | None = _time_role(ds, policy.get("valid_time"), "time")
     reference_name = _time_role(ds, policy.get("forecast_reference_time"), "forecast_reference_time", {valid_name} if valid_name else None)
     lead_name = _time_role(ds, policy.get("lead_time"), "forecast_period", {n for n in (valid_name, reference_name) if n})
 
@@ -293,7 +305,7 @@ def _promote_time_coordinate(loaded_obj: xr.Dataset, name: str, policy: Dict[str
     if "forecast_reference_time" not in ds and "lead_time" in ds:
         ds = ds.assign_coords(forecast_reference_time=valid - _time_delta(ds["lead_time"]))
     if valid_name != "valid_time" and valid_name in ds:
-        ds = ds.assign_coords(valid_time=ds[valid_name])
+        ds = ds.assign_coords(valid_time=valid)
         valid = ds["valid_time"]
     elif "valid_time" in ds:
         valid = ds["valid_time"]
@@ -305,9 +317,8 @@ def _promote_time_coordinate(loaded_obj: xr.Dataset, name: str, policy: Dict[str
         valid = ds["valid_time"]
 
     if valid.ndim == 0:
-        value = valid.values
-        value = pd.to_datetime(value) if np.asarray(value).dtype.kind in ("U", "S") else value
-        return ds.expand_dims(time=[value])
+        scalar_time = pd.to_datetime(valid.values) if np.asarray(valid.values).dtype.kind in ("U", "S") else valid.values
+        return ds.expand_dims(time=[scalar_time])
 
     forecast_dims = list(valid.dims)
     if forecast_dims != ["time"]:
@@ -378,12 +389,6 @@ def load_data(
 
     def _apply_subsets(loaded_obj: xr.Dataset | xr.DataArray) -> xr.Dataset | xr.DataArray:
         """Apply optional index-based (isel) or coordinate-based (sel) dimension slicing and generic post-processing."""
-        if dataset_type == "aeronet" and isinstance(loaded_obj, pd.DataFrame):
-            logger.info("Converting AERONET DataFrame '%s' to xarray Dataset.", name)
-            if loaded_obj.index.has_duplicates:
-                loaded_obj = loaded_obj.loc[~loaded_obj.index.duplicated(keep="first")]
-            loaded_obj = loaded_obj.to_xarray()
-
         if not isinstance(loaded_obj, xr.Dataset):
             return loaded_obj
 
@@ -416,16 +421,16 @@ def load_data(
                 loaded_obj = loaded_obj.isel(valid_isel)
                 logger.info("Applied isel subsetting on '%s': %s", name, valid_isel)
 
+        # Positional selection happens once in source layout; coordinate selection
+        # uses the normalized time index declared by CF metadata or time_axis.
+        loaded_obj = _promote_time_coordinate(loaded_obj, name, time_axis_policy)
+
         if sel_dict is not None:
             # Safely filter dictionary keys to those actually present in the dataset coordinates/dimensions
             valid_sel = {k: v for k, v in sel_dict.items() if k in loaded_obj.coords or k in loaded_obj.dims}
             if valid_sel:
                 loaded_obj = loaded_obj.sel(valid_sel)
                 logger.info("Applied sel subsetting on '%s': %s", name, valid_sel)
-
-        # Apply cycle/lead selection in the source layout, then normalize the
-        # remaining records to valid-time samples for MDT pairing.
-        loaded_obj = _promote_time_coordinate(loaded_obj, name, time_axis_policy)
 
         # Dynamically calculate wind speed if U and V wind components are present
         import numpy as np
@@ -443,20 +448,12 @@ def load_data(
                 loaded_obj["WSPD_10maboveground"].attrs["units"] = "m s-1"
                 logger.info("Dynamically calculated 'WSPD_10maboveground' from u_wind and v_wind for '%s'", name)
 
-        if isinstance(loaded_obj, xr.Dataset):
-            if len(loaded_obj.variables) == 0:
-                raise ValueError(
-                    f"Loaded dataset '{name}' is empty (contains 0 variables/dimensions). "
-                    f"This can happen if the requested date range has no matching files on the server, "
-                    f"or if filters excluded all variables."
-                )
-        elif isinstance(loaded_obj, pd.DataFrame):
-            if loaded_obj.empty:
-                raise ValueError(
-                    f"Loaded dataset '{name}' is empty (DataFrame contains 0 rows). "
-                    f"This can happen if the requested date range has no matching files on the server, "
-                    f"or if filters excluded all data."
-                )
+        if len(loaded_obj.variables) == 0:
+            raise ValueError(
+                f"Loaded dataset '{name}' is empty (contains 0 variables/dimensions). "
+                f"This can happen if the requested date range has no matching files on the server, "
+                f"or if filters excluded all variables."
+            )
 
         return loaded_obj
 
@@ -884,8 +881,12 @@ def save_data(
     # Clear variable and coordinate encodings to prevent write failures
     # from decode-only backend codecs (such as grib2io/Grib2SerializerCodec) when writing to Zarr.
     data = data.copy(deep=False)
-    for var in list(data.variables):
-        data[var].encoding = {}
+    if isinstance(data, xr.Dataset):
+        for var in data.variables:
+            data[var].encoding = {}
+    else:
+        for coord in data.coords:
+            data[coord].encoding = {}
     data.encoding = {}
 
     import pathlib

@@ -18,6 +18,9 @@ from mdt.tasks.reductions import calculate_reduction
 from mdt.tasks.statistics import compute_statistics
 
 if TYPE_CHECKING:
+    from prefect.futures import PrefectFuture
+    from prefect.task_runners import TaskRunner
+
     from mdt.config import ConfigParser
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,19 @@ logger = logging.getLogger(__name__)
 def _serialize_local_pairing_tasks(clusters_cfg: Dict[str, Any], pairing_mode: str) -> bool:
     """Return whether local pair tasks must run inline for compatibility."""
     return pairing_mode == "serial" and all(cfg.get("mode", "local") == "local" for cfg in clusters_cfg.values())
+
+
+def _resolve_task_output(value: Any) -> Any:
+    """Resolve nested future inputs without changing xarray objects or model names."""
+    if hasattr(value, "result") and callable(value.result):
+        value = value.result()
+    if isinstance(value, dict):
+        return {key: _resolve_task_output(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_resolve_task_output(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_resolve_task_output(item) for item in value)
+    return value
 
 
 def prefect_calculate_reduction(
@@ -72,13 +88,13 @@ def prefect_load_data(name: str, dataset_type: str, kwargs: Dict[str, Any]) -> A
     return load_data(name, dataset_type, kwargs)
 
 
-def prefect_pair_data(name: str, method: str, source_data: Any, target_data: Any, kwargs: Dict[str, Any]) -> Any:
+def prefect_pair_data(name: str, method: str, source_data: Any, target_data: Any, kwargs: Dict[str, Any], mask: str | None = None) -> Any:
     """Prefect task wrapper for pair_data."""
     from prefect import get_run_logger
 
     logger = get_run_logger()
     logger.info(f"Pairing data: {name} using {method}")
-    return pair_data(name, method, source_data, target_data, kwargs)
+    return pair_data(name, method, source_data, target_data, kwargs, mask=mask)
 
 
 def prefect_combine_paired_data(paired_data: Dict[str, Any], dim: str = "model") -> Any:
@@ -339,11 +355,6 @@ class PrefectEngine(Engine):
         pairing_mode = exec_cfg.get("pairing_mode", "serial")
         serialize_pair_tasks = _serialize_local_pairing_tasks(clusters_cfg, pairing_mode)
 
-        def _resolve_output(value: Any) -> Any:
-            if hasattr(value, "result") and callable(value.result):
-                return value.result()
-            return value
-
         # Snapshot mutable engine state into local variables so the flow closure
         # does not capture `self` (which may hold non-picklable Dask client state).
         dag = self.dag
@@ -415,7 +426,7 @@ class PrefectEngine(Engine):
 
                         if serialize_pair_tasks:
                             if last_pair_future is not None:
-                                _resolve_output(last_pair_future)
+                                _resolve_task_output(last_pair_future)
 
                             # Keep Monet pairing on the flow thread for local runs.
                             # This avoids ESMF VM/thread initialization issues in Prefect workers
@@ -423,9 +434,10 @@ class PrefectEngine(Engine):
                             pair_result = prefect_pair_data(
                                 name=node_data["name"],
                                 method=node_data["method"],
-                                source_data=_resolve_output(source_output),
-                                target_data=_resolve_output(target_output),
+                                source_data=_resolve_task_output(source_output),
+                                target_data=_resolve_task_output(target_output),
                                 kwargs={**node_data["kwargs"], "model_dim": node_data.get("model_dim", "model")},
+                                mask=node_data.get("mask"),
                             )
                             task_outputs[node_id] = pair_result
                             last_pair_future = pair_result
@@ -436,6 +448,7 @@ class PrefectEngine(Engine):
                                 source_data=source_output,
                                 target_data=target_output,
                                 kwargs={**node_data["kwargs"], "model_dim": node_data.get("model_dim", "model")},
+                                mask=node_data.get("mask"),
                             )
                             task_outputs[node_id] = future
 
@@ -523,7 +536,10 @@ class PrefectEngine(Engine):
             # Single local worker — use ConcurrentTaskRunner (no Dask serialization overhead)
             from prefect.task_runners import ConcurrentTaskRunner
 
-            task_futures = mdt_flow.with_options(task_runner=ConcurrentTaskRunner())()
+            # Prefect's runner generic is invariant, although concurrent futures
+            # implement the PrefectFuture interface required by Flow.with_options.
+            runner = cast("TaskRunner[PrefectFuture[Any]]", ConcurrentTaskRunner())
+            task_futures = mdt_flow.with_options(task_runner=runner)()
 
         # Requirement: Ensure the CLI waits for task completion.
         # Prefect .submit() returns futures. We need to wait for them.
@@ -533,7 +549,7 @@ class PrefectEngine(Engine):
         for node_id, future in task_futures.items():
             try:
                 # This will block until the specific task is done.
-                final_results[node_id] = _resolve_output(future)
+                final_results[node_id] = _resolve_task_output(future)
             except Exception as e:
                 logger.error(f"Task {node_id} failed: {e}")
                 final_results[node_id] = e
