@@ -1,4 +1,5 @@
 import logging
+import operator
 import os
 import threading
 from collections.abc import Hashable
@@ -74,8 +75,66 @@ def _expand_local_grib_files(kwargs: Dict[str, Any], dataset_type: str, name: st
 
     result = dict(kwargs)
     result["files"] = files
+    if len(files) > 1 and result.get("preprocess") is None:
+        # Per-file GRIB scans expose forecast times as scalar coordinates.
+        # Give each file a canonical time dimension coordinate before the
+        # driver concatenates them, otherwise the per-sample times collapse
+        # to the first file's value (coords="minimal") and `time` is left
+        # without an index. User-supplied preprocess hooks stay untouched.
+        result["preprocess"] = _grib_forecast_time_preprocess
     logger.info("Resolved %d local GRIB input file(s) for '%s'.", len(files), name)
     return result
+
+
+def _grib_forecast_time_preprocess(ds: xr.Dataset) -> xr.Dataset:
+    """Promote scalar CF forecast-time coordinates before multi-file concatenation.
+
+    GRIB messages read through grib2io carry ``refDate`` / ``leadTime`` /
+    ``validDate`` as scalar coordinates. Concatenating per-file datasets along
+    ``time`` with ``coords="minimal"`` keeps only the first file's scalar value,
+    losing every other sample's valid time. Attaching the forecast coordinates
+    to a singleton ``time`` dimension here lets the driver's nested concat build
+    a real time index. Dimension coordinates survive concatenation even though
+    non-index coordinate attrs do not.
+    """
+    if "time" in ds.dims:
+        return ds
+    roles = {
+        "time": "valid_time",
+        "forecast_reference_time": "forecast_reference_time",
+        "forecast_period": "lead_time",
+    }
+    updates: dict[str, tuple[str, np.ndarray]] = {}
+    attrs: dict[str, dict] = {}
+    for coord_name, variable in ds.coords.items():
+        canonical = roles.get(variable.attrs.get("standard_name"))
+        if canonical is None or variable.ndim != 0 or variable.dtype.kind not in ("M", "m"):
+            continue
+        updates[canonical] = ("time", np.atleast_1d(variable.values))
+        attrs[canonical] = dict(variable.attrs)
+    if not updates:
+        return ds
+    # A pre-existing scalar `time` coordinate (e.g. a reader's reference time)
+    # would conflict with the new time dimension coordinate; the CF-described
+    # forecast coordinates promoted above carry the same information.
+    if "time" in ds.coords and ds["time"].ndim == 0:
+        ds = ds.drop_vars("time")
+    # Index coordinates survive concatenation (non-index coordinate attrs do
+    # not), so give the new sample axis a real datetime index. Without a
+    # CF-described valid time, fall back to the reference time when present.
+    # The index must be assigned atomically with the other coordinates: a
+    # separate assign_coords would align against the dataset's default index.
+    if "valid_time" in updates:
+        time_values = updates["valid_time"][1]
+    elif "forecast_reference_time" in updates:
+        time_values = updates["forecast_reference_time"][1]
+    else:
+        return ds
+    updates["time"] = pd.Index(time_values, name="time")
+    ds = ds.assign_coords(updates)
+    for canonical, coord_attrs in attrs.items():
+        ds[canonical].attrs.update(coord_attrs)
+    return ds
 
 
 def _unsupported_option_name(error: BaseException) -> str | None:
@@ -210,6 +269,13 @@ def _time_role(ds: xr.Dataset, configured: Any, standard_name: str, exclude: set
     """Resolve one time coordinate from explicit policy or CF metadata."""
     candidates = [configured] if isinstance(configured, str) else list(configured or [])
     candidates.extend(name for name, var in ds.variables.items() if var.attrs.get("standard_name") == standard_name)
+    # An existing canonical coordinate wins over alias discovery: it avoids
+    # rename collisions and prevents a stale scalar alias (e.g. a GRIB file's
+    # validDate collapsed by multi-file concatenation) from shadowing the
+    # per-sample canonical coordinate built during preprocessing.
+    canonical = {"time": "valid_time", "forecast_reference_time": "forecast_reference_time", "forecast_period": "lead_time"}.get(standard_name)
+    if canonical and canonical in ds.variables:
+        candidates.insert(0, canonical)
     incompatible = {
         "time": {"forecast_reference_time", "forecast_period"},
         "forecast_reference_time": {"time", "forecast_period"},
@@ -252,7 +318,16 @@ def _promote_time_coordinate(loaded_obj: xr.Dataset, name: str, policy: Dict[str
     """
     ds = loaded_obj
     policy = policy or {}
-    valid_name: Hashable | None = _time_role(ds, policy.get("valid_time"), "time")
+    # An indexed datetime `time` dimension coordinate is the canonical sample
+    # axis (built per file before multi-file concatenation). It outranks scalar
+    # CF aliases such as a GRIB validDate that concatenation collapsed to the
+    # first file's value.
+    indexed_time = (
+        "time" in ds.indexes
+        and ds["time"].dims == ("time",)
+        and ds["time"].dtype.kind == "M"
+    )
+    valid_name: Hashable | None = "time" if indexed_time else _time_role(ds, policy.get("valid_time"), "time")
     reference_name = _time_role(ds, policy.get("forecast_reference_time"), "forecast_reference_time", {valid_name} if valid_name else None)
     lead_name = _time_role(ds, policy.get("lead_time"), "forecast_period", {n for n in (valid_name, reference_name) if n})
 
@@ -272,9 +347,14 @@ def _promote_time_coordinate(loaded_obj: xr.Dataset, name: str, policy: Dict[str
     # MonetIO and other readers sometimes expose valid time under `time`.
     # An explicit role mapping resolves that without imposing a reader-specific rule.
     rename = {}
-    if reference_name and reference_name != valid_name and reference_name != "forecast_reference_time":
+    if (
+        reference_name
+        and reference_name != valid_name
+        and reference_name != "forecast_reference_time"
+        and "forecast_reference_time" not in ds.variables
+    ):
         rename[reference_name] = "forecast_reference_time"
-    if lead_name and lead_name != valid_name and lead_name != "lead_time":
+    if lead_name and lead_name != valid_name and lead_name != "lead_time" and "lead_time" not in ds.variables:
         rename[lead_name] = "lead_time"
     if rename:
         ds = ds.rename(rename)
@@ -318,6 +398,19 @@ def _promote_time_coordinate(loaded_obj: xr.Dataset, name: str, policy: Dict[str
 
     if valid.ndim == 0:
         scalar_time = pd.to_datetime(valid.values) if np.asarray(valid.values).dtype.kind in ("U", "S") else valid.values
+        if "time" in ds.dims:
+            # The sample axis already exists (typically concatenated GRIB
+            # files). Expanding it again would raise "Dimension time already
+            # exists"; fill/overwrite the missing time index instead. Only a
+            # single-sample axis can be labeled from one scalar valid time.
+            if ds.sizes["time"] != 1:
+                logger.warning(
+                    "Dataset '%s' has %d records on its time axis but only a scalar valid time; leaving the time index unchanged.",
+                    name,
+                    ds.sizes["time"],
+                )
+                return ds
+            return ds.assign_coords(time=("time", [scalar_time]))
         return ds.expand_dims(time=[scalar_time])
 
     forecast_dims = list(valid.dims)
@@ -329,7 +422,83 @@ def _promote_time_coordinate(loaded_obj: xr.Dataset, name: str, policy: Dict[str
     else:
         ds = ds.assign_coords(time=valid)
     ds = ds.assign_coords(valid_time=ds["time"])
+    # Re-assert the sample-axis index: assigning a coordinate can leave the
+    # dimension indexed by position rather than by its datetime values.
+    if ds["time"].dims == ("time",) and ds["time"].dtype.kind == "M":
+        ds = ds.assign_coords(time=pd.Index(ds["time"].values, name="time"))
     logger.info("Normalized declared forecast time coordinates for '%s'.", name)
+    return ds
+
+
+def _coerce_sel_label(coord: xr.DataArray, label: Any) -> Any:
+    """Normalize labels against timedelta coordinates.
+
+    Strings like '3 hours' are parsed as timedeltas; plain numbers are
+    interpreted as hours, matching the readers' integer ``lead_time`` option.
+    """
+    if coord.dtype.kind != "m":
+        return label
+
+    def _as_timedelta(value: Any) -> Any:
+        if isinstance(value, str):
+            return pd.to_timedelta(value)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return pd.to_timedelta(value, unit="h")
+        return value
+
+    if isinstance(label, slice):
+        return slice(_as_timedelta(label.start), _as_timedelta(label.stop), label.step)
+    if isinstance(label, (list, tuple)):
+        return [_as_timedelta(item) for item in label]
+    return _as_timedelta(label)
+
+
+def _sel_labels(ds: xr.Dataset, labels: Dict[Any, Any]) -> xr.Dataset:
+    """Coordinate selection that also works on non-unique forecast indexes.
+
+    Multi-cycle forecast datasets repeat lead times (and can repeat valid
+    times), and pandas label indexing then raises ``InvalidIndexError``.
+    Selection on such coordinates falls back to value-based masks, which keep
+    every record matching the requested labels.
+    """
+    index_sel: Dict[Any, Any] = {}
+    mask_sel: Dict[Any, Any] = {}
+    for key, label in labels.items():
+        coord = ds[key]
+        label = _coerce_sel_label(coord, label)
+        index = ds.indexes.get(key)
+        non_unique = index is not None and not index.is_unique
+        if coord.ndim == 1 and coord.dims == (key,) and non_unique:
+            mask_sel[key] = label
+        else:
+            index_sel[key] = label
+    if index_sel:
+        try:
+            ds = ds.sel(index_sel)
+        except (TypeError, KeyError, pd.errors.InvalidIndexError) as error:
+            message = str(error)
+            if "slice" not in message and "index" not in message.lower():
+                raise
+            # e.g. a numeric bound against a timedelta index, or a duplicate
+            # slice bound: fall back to value masks for these keys as well.
+            mask_sel.update(index_sel)
+    for key, label in mask_sel.items():
+        coord = ds[key]
+        if isinstance(label, slice):
+            mask = xr.ones_like(coord, dtype=bool)
+            if label.start is not None:
+                mask = mask & (coord >= label.start)
+            if label.stop is not None:
+                mask = mask & (coord <= label.stop)
+        elif isinstance(label, (list, tuple, np.ndarray, pd.Index)):
+            mask = coord.isin(list(label))
+        else:
+            mask = coord == label
+        # The mask lives on the coordinate's dimension (e.g. lead_time(time)),
+        # which need not share the coordinate's name.
+        if coord.ndim != 1:
+            raise ValueError(f"Coordinate selection on multidimensional coordinate '{key}' requires label indexing.")
+        ds = ds.isel({coord.dims[0]: mask})
     return ds
 
 
@@ -429,7 +598,7 @@ def load_data(
             # Safely filter dictionary keys to those actually present in the dataset coordinates/dimensions
             valid_sel = {k: v for k, v in sel_dict.items() if k in loaded_obj.coords or k in loaded_obj.dims}
             if valid_sel:
-                loaded_obj = loaded_obj.sel(valid_sel)
+                loaded_obj = _sel_labels(loaded_obj, valid_sel)
                 logger.info("Applied sel subsetting on '%s': %s", name, valid_sel)
 
         # Dynamically calculate wind speed if U and V wind components are present
@@ -850,6 +1019,92 @@ def load_data(
         raise
 
 
+def _sanitize_object_variables(data: xr.Dataset | xr.DataArray) -> xr.Dataset | xr.DataArray:
+    """Make object-dtype variables serializable before Zarr/Icechunk writes.
+
+    GRIB readers (grib2io's xarray backend) attach scalar metadata coordinates
+    such as ``typeOfAerosol`` whose value is ``None`` when the key does not
+    apply to the selected messages. xarray cannot infer a dtype for object
+    arrays containing ``None`` and aborts the write with
+    "unable to infer dtype on variable None".
+
+    Rules:
+    - Variables whose values are all ``None`` carry no information: drop them
+      (they are metadata placeholders, not data).
+    - String/bytes/numeric object arrays keep their data; ``None`` entries are
+      replaced with a typed fill value (""/b""/NaN) so a concrete dtype can be
+      inferred.
+    - Anything else raises a clear error naming the offending variable.
+
+    The input is not mutated: callers pass a shallow copy (as ``save_data``
+    does), and variable data is replaced, never edited in place.
+    """
+    if isinstance(data, xr.Dataset):
+        var_names = list(data.variables)
+    else:
+        var_names = list(data.coords)
+        if data.dtype == object:
+            var_names.append(data.name if data.name is not None else "<data>")
+
+    for var_name in var_names:
+        if isinstance(data, xr.Dataset):
+            variable = data[var_name].variable
+        elif var_name in data.coords:
+            variable = data.coords[var_name].variable
+        else:
+            variable = data.variable
+        if variable.dtype != object:
+            continue
+
+        values = np.asarray(variable.values)
+
+        # grib2io wraps GRIB codes in Grib2Metadata objects that expose the
+        # numeric code via __index__/.value. Unwrap any index-able metadata
+        # objects to plain ints before classification (also avoids their
+        # custom __eq__ performing table lookups during the None mask).
+        builtin_types = (str, bytes, int, float, bool, np.integer, np.floating, np.bool_)
+        unwrapped = []
+        changed = False
+        for value in values.flat:
+            if value is None or isinstance(value, builtin_types):
+                unwrapped.append(value)
+            else:
+                try:
+                    unwrapped.append(operator.index(value))
+                    changed = True
+                except TypeError:
+                    unwrapped.append(value)
+        if changed:
+            values = np.array(unwrapped, dtype=object).reshape(values.shape)
+            variable.data = values
+
+        # xarray coerces None to NaN on assignment, so treat both as missing.
+        none_mask = (values == None) | (values != values)  # noqa: E711 - elementwise on object arrays
+        non_none = values[~none_mask]
+
+        if non_none.size == 0:
+            if var_name == getattr(data, "name", None) and isinstance(data, xr.DataArray):
+                raise ValueError(f"Cannot serialize DataArray '{var_name}': all values are None.")
+            logger.warning("Dropping None-valued metadata variable '%s' before serialization.", var_name)
+            data = data.drop_vars(var_name)
+            continue
+
+        if all(isinstance(v, str) for v in non_none):
+            cleaned = np.where(none_mask, "", values).astype(str)
+        elif all(isinstance(v, bytes) for v in non_none):
+            cleaned = np.where(none_mask, b"", values).astype(bytes)
+        elif all(isinstance(v, (int, float, np.integer, np.floating, bool, np.bool_)) for v in non_none):
+            cleaned = np.where(none_mask, np.nan, values).astype(float)
+        else:
+            raise ValueError(
+                f"Cannot serialize variable '{var_name}': object dtype with unsupported Python values "
+                f"({sorted({type(v).__name__ for v in non_none})})."
+            )
+        variable.data = cleaned
+
+    return data
+
+
 def save_data(
     name: str,
     data: xr.Dataset | xr.DataArray,
@@ -878,6 +1133,16 @@ def save_data(
     if not isinstance(data, (xr.Dataset, xr.DataArray)):
         raise TypeError(f"Only xarray Dataset or DataArray objects can be saved, got {type(data).__name__}")
 
+    # Materialize lazy (Dask-backed) data before writing. Reader-produced
+    # graphs (e.g. grib2io decode chains wrapped in dask-expr HLG sequences)
+    # are not serializable by the distributed scheduler, so computing them
+    # with the default (distributed) scheduler fails with
+    # "Could not serialize object of type _HLGExprSequence". Use the local
+    # threaded scheduler: the write stays self-contained in this worker and
+    # prepared datasets are bounded by the request.
+    if data.chunks is not None:
+        data = data.compute(scheduler="threads")
+
     # Clear variable and coordinate encodings to prevent write failures
     # from decode-only backend codecs (such as grib2io/Grib2SerializerCodec) when writing to Zarr.
     data = data.copy(deep=False)
@@ -888,6 +1153,10 @@ def save_data(
         for coord in data.coords:
             data[coord].encoding = {}
     data.encoding = {}
+
+    # GRIB metadata placeholders (e.g. scalar 'typeOfAerosol' = None) are not
+    # serializable; drop or type them before handing the data to to_zarr.
+    data = _sanitize_object_variables(data)
 
     import pathlib
     import shutil
@@ -920,15 +1189,26 @@ def save_data(
             logger.error("Failed to save to Icechunk: %s", e)
             raise
     elif backend == "zarr":
-        # Ensure target directory is clean (idempotency rule)
-        if pathlib.Path(url).exists():
-            shutil.rmtree(url)
-        pathlib.Path(url).parent.mkdir(parents=True, exist_ok=True)
+        # Atomic write (feature 001-prep-fixed-allocation, research.md R4):
+        # write to a sibling tmp dir, then rename over the target so an
+        # interrupted save never leaves a half-written store that could be
+        # mistaken for a complete cache. The previous store survives until
+        # the new one is fully written.
+        target = pathlib.Path(url)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = target.with_name(f"{target.name}.tmp-{os.getpid()}")
+        if tmp_path.exists():
+            shutil.rmtree(tmp_path)
 
         try:
-            data.to_zarr(url, mode="w", **kwargs)
+            data.to_zarr(str(tmp_path), mode="w", **kwargs)
+            if target.exists():
+                shutil.rmtree(target)
+            os.replace(tmp_path, target)
             logger.info("Successfully saved dataset '%s' to Zarr at '%s'", name, url)
         except Exception as e:
+            if tmp_path.exists():
+                shutil.rmtree(tmp_path, ignore_errors=True)
             logger.error("Failed to save to Zarr: %s", e)
             raise
     else:

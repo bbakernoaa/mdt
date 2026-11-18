@@ -113,15 +113,158 @@ class DAGBuilder:
                 kwargs["existing_zarr"] = True
 
             target_cluster = details.get("cluster", default_cluster)
-            logger.debug(f"Adding data node: {node_id} (type={dataset_type}, cluster={target_cluster})")
+            # Retrieval (remote downloads / GRIB scans) stays on the service
+            # cluster (e.g. HPC DTNs); loads served from an existing local
+            # cache go to the default compute cluster so downstream tasks run
+            # where the data is read. Explicit per-task `cluster` wins.
+            retrieval = not (
+                kwargs.get("existing_zarr", False)
+                or details.get("existing", False)
+                or details.get("bypass_load", False)
+                or kwargs.get("files")
+                or self._cache_covers_request(kwargs)
+            )
+            logger.debug(f"Adding data node: {node_id} (type={dataset_type}, cluster={target_cluster}, retrieval={retrieval})")
             self.graph.add_node(
                 node_id,
                 task_type="load_data",
                 name=name,
                 dataset_type=dataset_type,
                 cluster=target_cluster,
+                cluster_explicit="cluster" in details,
+                retrieval=retrieval,
                 kwargs=kwargs,
             )
+
+    def _cache_covers_request(self, kwargs: dict[str, Any]) -> bool:
+        """Whether an existing local cache likely covers the requested dates.
+
+        Mirrors the runtime auto-detection in ``mdt.tasks.data.load_data`` so
+        the DAG can route cached loads to compute nodes instead of the
+        retrieval (service/DTN) cluster. Conservative: any doubt means
+        retrieval. Only the cheap existence/date checks run here; the runtime
+        pre-check still validates before actually bypassing retrieval.
+        """
+        import numpy as np
+        import pandas as pd
+        import xarray as xr
+
+        requested = kwargs.get("dates") or kwargs.get("date")
+        if requested is None and "start_date" in kwargs and "end_date" in kwargs:
+            requested = pd.date_range(kwargs["start_date"], kwargs["end_date"], freq="D").strftime("%Y-%m-%d").tolist()
+        if not requested:
+            return False
+        if isinstance(requested, str):
+            requested = [requested]
+        try:
+            requested_dates = {pd.to_datetime(d).date() for d in requested}
+        except Exception:
+            return False
+
+        icechunk_url = kwargs.get("icechunk_url") or kwargs.get("icechunk_repo") if kwargs.get("use_icechunk") else None
+        try:
+            if icechunk_url and not str(icechunk_url).startswith("s3://"):
+                from pathlib import Path
+
+                if not (Path(icechunk_url) / "repo").exists():
+                    return False
+                import icechunk
+
+                storage = icechunk.local_filesystem_storage(icechunk_url)
+                repo = icechunk.Repository.open(storage)
+                session = repo.readonly_session(branch="main")
+                ds = xr.open_zarr(session.store, consolidated=False)
+            elif not kwargs.get("use_icechunk"):
+                from pathlib import Path
+
+                store_path = kwargs.get("store_path")
+                if not store_path:
+                    return False
+                path = Path(store_path)
+                if not ((path / "zarr.json").exists() or (path / ".zgroup").exists()):
+                    return False
+                ds = xr.open_zarr(store_path)
+            else:
+                return False
+        except Exception as e:
+            logger.debug("Cache pre-check failed during DAG build: %s", e)
+            return False
+
+        try:
+            time_coord = next(
+                (c for c in ("time", "valid_time", "dates", "date", "valid_date", "reference_time") if c in ds.coords or c in ds.dims),
+                next((c for c in ds.coords if "time" in str(c).lower() or "date" in str(c).lower()), None),
+            )
+            if time_coord is None:
+                return False
+            values = ds[time_coord].values
+            if not isinstance(values, (list, tuple, np.ndarray, pd.DatetimeIndex)):
+                values = [values]
+            store_dates = set()
+            for t in values:
+                try:
+                    store_dates.add(pd.to_datetime(t).date())
+                except Exception:
+                    continue
+            return bool(store_dates) and requested_dates <= store_dates
+        except Exception:
+            return False
+        finally:
+            try:
+                ds.close()
+            except Exception:
+                pass
+
+    def build_prep_dag(self) -> nx.DiGraph:
+        """Build the prep-stage graph: load nodes + derived store-save nodes only.
+
+        Feature 001-prep-fixed-allocation (FR-002, data-model.md PrepDAG).
+        Storage policy:
+        - REMOTE sources (retrieval=True) are downloaded and materialized as
+          real local zarr data (``<prep.store_dir>/{name}_prep.zarr``) so the
+          compute stage never needs the original remote source. Any
+          virtual-reference ingestion options are stripped from the load.
+        - LOCAL sources (files already on shared storage) may keep a
+          configured icechunk store of virtual references (no data copy);
+          without one they are persisted to a derived zarr save.
+        Analysis stages (pairing/combine/statistics/plots/reductions) never
+        appear in this graph.
+        """
+        full = self.build()
+        prep = nx.DiGraph()
+        store_dir = (self.config.config.get("prep") or {}).get("store_dir", "./zarr_stores")
+        for node_id, attrs in full.nodes(data=True):
+            if attrs.get("task_type") != "load_data":
+                continue
+            attrs = dict(attrs)
+            zarr_store = (self.config.data[attrs["name"]].get("zarr_store") or {})
+            if attrs.get("retrieval", True):
+                # Remote data: strip virtual-reference ingestion so the load
+                # downloads actual data, then materialize it to local zarr.
+                kwargs = dict(attrs.get("kwargs") or {})
+                for key in ("use_icechunk", "use_virtualizarr", "virtualizarr_backend", "icechunk_url", "icechunk_repo", "store_path"):
+                    kwargs.pop(key, None)
+                kwargs.pop("existing_zarr", None)
+                attrs["kwargs"] = kwargs
+                prep.add_node(node_id, **attrs)
+            else:
+                prep.add_node(node_id, **attrs)
+                if zarr_store.get("enabled"):
+                    continue  # local files: store of virtual references written inside load_data
+            save_id = f"prep_save_{attrs['name']}"
+            prep.add_node(
+                save_id,
+                task_type="save_data",
+                name=attrs["name"],
+                backend="zarr",
+                url=f"{store_dir}/{attrs['name']}_prep.zarr",
+                cluster=attrs.get("cluster"),
+                cluster_explicit=attrs.get("cluster_explicit", False),
+                kwargs={},
+            )
+            prep.add_edge(node_id, save_id)
+        logger.info("Built prep task graph with %d nodes (loads + derived saves only).", prep.number_of_nodes())
+        return prep
 
     def _find_node(self, name: str) -> str | None:
         """

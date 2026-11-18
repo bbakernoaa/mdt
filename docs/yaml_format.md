@@ -97,8 +97,15 @@ data:
         lead_time: [lead_time, forecast_period, step]
 ```
 
-Use `sel` to choose cycles or lead values before normalization, for example
-`sel: {lead_time: 6}`.
+Use `sel` to choose cycles or lead values after normalization, for example
+`sel: {lead_time: 6}` or a list such as `sel: {lead_time: [0, 3, 6]}`. Numbers
+are hours (the same units as the readers' `lead_time` option); strings like
+`"6 hours"` also work. Selection also works when
+forecast coordinates repeat across cycles: repeated lead times (and repeated
+valid times) are matched by value instead of label indexing. Multi-cycle local
+GRIB inputs often contain overlapping valid times (one cycle's 24 h forecast
+equals the next cycle's analysis); select the leads to analyze so the pairing
+`time` axis stays unique.
 
 ---
 

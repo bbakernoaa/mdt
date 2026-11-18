@@ -1,0 +1,259 @@
+# GEFS + GCAFS vs AERONET comparison on Gaea C6 via SLURM + Dask, using the
+# plain 'dask' orchestrator (no Prefect server/SQLite state).
+#
+# Launch from a C6 login node (gaea61-66):
+#   PREFECT_HOME is NOT needed for the dask orchestrator.
+#   mdt run docs/examples/gefs_aeronet_gaea_dtn.yaml
+#
+# Topology / data flow:
+# - RETRIEVAL (remote GEFS/AERONET downloads, GRIB scans) runs on DTN worker
+#   jobs (SLURM federation cluster 'es', partition 'dtn_f5_f6', QoS 'dtn',
+#   --constraint=f6 -> dtn01-09 with /gpfs/f6 mounted), per Gaea policy.
+#   Retrieved data lands in the Icechunk/Zarr stores under ./zarr_stores.
+# - Everything else (cached loads, pairing, statistics, plots) runs on C6
+#   COMPUTE nodes ('c6' cluster, 'batch' partition). Cached loads read the
+#   stores directly on compute workers, and Dask keeps downstream tasks on
+#   the workers that hold the data -- datasets never round-trip through the
+#   login node.
+# See https://docs.rdhpcs.noaa.gov/systems/gaea_user_guide.html (Slurm
+# clusters / Partitions / Data transfer nodes).
+
+data:
+  gefs_model:
+    type: "gefs"
+    kwargs:
+      start_date: "2025-08-01"
+      end_date: "2025-08-05"
+      product: "aerosol"
+      lead_time: [0, 3, 6, 9, 12, 15, 18, 21]
+      # grib2io/xarray backend filtering compatible with PR 246 workflows
+      filters:
+        typeOfFirstFixedSurface: 10 # Entire atmosphere aerosol variables
+        shortName: "totAOD550"
+    zarr_store:
+      enabled: true
+      backend: "icechunk"
+      # Local Icechunk destination for virtual references.
+      icechunk_url: "./zarr_stores/gefs_aerosol_icechunk"
+      max_scan_attempts: 5
+      network_timeout: 300.0
+      max_concurrent_requests: 4
+
+  gcafs_model:
+    type: "gefs"
+    kwargs:
+      files: /gpfs/f6/bil-fire3/scratch/Barry.Baker/tmp/gefs*/12/chem/pgrb2ap25/*.grib2
+      filters:
+        typeOfFirstFixedSurface: 10 # Entire atmosphere aerosol variables
+        shortName: "totAOD550"
+      # Local files are opened as-is; select the leads to analyze here (hours,
+      # same units as the readers' lead_time option). Keeping only leads 0-21h
+      # avoids repeated valid times where one cycle's 24h forecast overlaps the
+      # next cycle's analysis.
+      sel:
+        lead_time: [0, 3, 6, 9, 12, 15, 18, 21]
+
+  aeronet_obs:
+    type: "aeronet"
+    kwargs:
+      # AERONET data are retrieved from remote source (no local zarr required).
+      start_date: "2025-08-01"
+      end_date: "2025-08-05"
+      # Chunk long ranges to reduce risk of remote endpoint resets/timeouts.
+      n_chunks: 4
+      retries: 8
+      backoff_factor: 1.5
+      interp_to_aod_values: [550., 670.]
+      freq: "h"
+    # zarr_store:
+    #   enabled: true
+    #   backend: "icechunk"
+    #   # Local Icechunk destination for virtual references.
+    #   icechunk_url: "./zarr_stores/aeronet_icechunk"
+    #   max_scan_attempts: 5
+    #   network_timeout: 300.0
+    #   max_concurrent_requests: 4
+
+pairing:
+  pair_gefs_aeronet:
+    source: "gefs_model"
+    target: "aeronet_obs"
+    method: "bilinear"
+
+  pair_gcafs_aeronet:
+    source: "gcafs_model"
+    target: "aeronet_obs"
+    method: "bilinear"
+
+# Merge both paired datasets along a 'model' dimension so plots can compare
+# GEFS and GCAFS side by side.
+combine:
+  model_comparison:
+    sources:
+      - pair_gefs_aeronet
+      - pair_gcafs_aeronet
+    dim: "model"
+
+statistics:
+  # Statistics run once per entry along the 'model' dimension, so both GEFS
+  # and GCAFS get the full metric suite. Results are written to a single
+  # combined table (gefs_gcafs_aeronet_stats.md) with one column per model,
+  # labeled by the pairing name (pair_gefs_aeronet, pair_gcafs_aeronet).
+  aod_stats:
+    input: "model_comparison"
+    metrics: ["rmse", "mb", "mae", "mse", "mape", "ioa_m", "fac2", "r2", "d1", "e1", "ac", "fss", "vets", "wassersteindistance"]
+    kwargs:
+      obs_var: "aod_550nm"
+      mod_var: "totAOD550"
+      savename: "gefs_gcafs_aeronet_stats.md"
+
+plots:
+  # Maps cannot overlay two models meaningfully, so this renders as a facet
+  # grid: one bias-map panel per model with shared color limits.
+  spatial_aod:
+    input: "model_comparison"
+    type: "spatial_bias_scatter"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_spatial.png"
+      title: "GEFS and GCAFS vs AERONET AOD Bias"
+      style: "pivotal_weather"
+      discrete: false
+      cbar_label: "AOD Bias (Model - Obs)"
+      col1: "aod_550nm"
+      col2: "totAOD550"
+      fact: 0.2
+      vmin: -0.5
+      vmax: 0.5
+      col_wrap: 2
+
+  # Scatter, timeseries and Taylor classes accept several model variables,
+  # so both models are drawn on one shared axis per figure.
+  scatter_aod:
+    input: "model_comparison"
+    type: "scatter"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_scatter.png"
+      var1: "aod_550nm"
+      var2: "totAOD550"
+      title: "GEFS and GCAFS vs AERONET AOD"
+      edgecolors: 'black'
+      linewidths: 0.1
+      alpha: 0.7
+
+  timeseries_bias:
+    input: "model_comparison"
+    type: "timeseriesstat"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_timeseries_bias.png"
+      title: "GEFS and GCAFS vs AERONET AOD Bias"
+      var1: "aod_550nm"
+      var2: "totAOD550"
+      freq: "3h"
+
+  timeseries_rmse:
+    input: "model_comparison"
+    type: "timeseriesstat"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_timeseries_rmse.png"
+      title: "GEFS and GCAFS vs AERONET AOD RMSE"
+      var1: "aod_550nm"
+      var2: "totAOD550"
+      freq: "3h"
+      stat: "rmse"
+      markersize: 1
+
+  taylor:
+    input: "model_comparison"
+    type: "taylor"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_taylor.png"
+      title: "GEFS and GCAFS vs AERONET AOD"
+      col1: "aod_550nm"
+      col2: "totAOD550"
+      label1: "AERONET AOD"
+
+save:
+  save_aeronet_obs:
+    input: "aeronet_obs"
+    backend: "zarr"
+    url: "./zarr_stores/aeronet_obs_saved.zarr"
+
+  save_paired_gefs:
+    input: "pair_gefs_aeronet"
+    backend: "zarr"
+    url: "./zarr_stores/pair_gefs_aeronet_saved.zarr"
+
+  save_paired_gcafs:
+    input: "pair_gcafs_aeronet"
+    backend: "zarr"
+    url: "./zarr_stores/pair_gcafs_aeronet_saved.zarr"
+
+  save_model_comparison:
+    input: "model_comparison"
+    backend: "zarr"
+    url: "./zarr_stores/gefs_gcafs_comparison_saved.zarr"
+
+execution:
+  # Plain-Dask engine: no Prefect API server, no SQLite state, and task
+  # results stay on workers (no gather back to the login node).
+  orchestrator: "dask"
+  default_cluster: "gaea_c6"
+  # Loads served from existing Icechunk/Zarr caches run on the compute
+  # cluster instead of the DTNs; only retrieval uses 'service'.
+  cache_cluster: "gaea_c6"
+  # Bind/advertise the Dask scheduler on the Slingshot HSN and make remote
+  # workers use it too. The default front-end network ('fen') does not carry
+  # arbitrary TCP ports between login nodes and DTNs (verified: workers time
+  # out connecting to the fen address). 'bond0' also works but is slower.
+  dask_interface: "hsn0"
+  clusters:
+    # Compute workers: cached loads, pairing, statistics, plots on C6 nodes.
+    # One node per job (batch partition max is 512 nodes); scale with
+    # 'workers'. No 4-CPU restriction here (that cap is DTN-QoS specific).
+    gaea_c6:
+      mode: "gaea"        # RDHPCS Gaea profile -> dask-jobqueue SLURMCluster
+      workers: 1          # number of sbatch worker jobs submitted
+      cluster_kwargs:
+        queue: "batch"              # C6 compute partition
+        account: "bil-fire3"        # RDHPCS project to charge (adjust if needed)
+        walltime: "02:00:00"
+        cores: 32
+        processes: 4                # 4 worker processes x 8 threads
+        memory: "200GB"             # per-worker Dask memory limit (384 GB nodes)
+        # C6 Slurm registers RealMemory=1 (memory not enforced), so any
+        # #SBATCH --mem request is rejected ("Memory specification can not be
+        # satisfied"). Drop the generated --mem directive; the Dask worker
+        # memory limit above still applies.
+        job_directives_skip: ["--mem"]
+        # Launch workers with the mdt conda env (contains dask/dask-jobqueue/
+        # monetio/esmf); avoids relying on conda activation inside batch jobs.
+        python: "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/bin/python"
+        job_extra_directives:
+          - "-M c6"                 # Slurm federation: C6 compute cluster
+        job_script_prologue:
+          # Relative zarr/figure paths resolve against the repo directory.
+          - "cd /gpfs/f6/bil-fire3/scratch/Barry.Baker/python/mdt"
+
+    # Service workers on DTNs: remote data downloads (GEFS/AERONET) only.
+    # IMPORTANT: the 'dtn' QoS allows at most 4 CPUs PER JOB
+    # (sacctmgr show qos dtn -> MaxTRESPerJob cpu=4) and 50 CPUs per user.
+    # Larger jobs pend forever with QOSMaxCpuPerJobLimit. Defined explicitly
+    # so MDT does not auto-derive a 'service' cluster with the generic
+    # --partition=service directive (not valid on Gaea).
+    service:
+      mode: "gaea"
+      workers: 1
+      cluster_kwargs:
+        queue: "dtn_f5_f6"          # DTN partition on the 'es' SLURM cluster
+        account: "bil-fire3"
+        walltime: "04:00:00"        # DTN default/max wall is 12h/16h
+        cores: 4                    # dtn QoS per-job CPU cap
+        processes: 1
+        memory: "32GB"
+        python: "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/bin/python"
+        job_extra_directives:
+          - "-M es"                 # Slurm federation: DTNs live on cluster 'es'
+          - "--qos=dtn"             # default DTN QoS (no compute fairshare cost)
+          - "--constraint=f6"       # route to dtn01-09 with /gpfs/f6 mounted
+        job_script_prologue:
+          - "cd /gpfs/f6/bil-fire3/scratch/Barry.Baker/python/mdt"

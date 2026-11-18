@@ -3,7 +3,7 @@ data:
     type: "gefs"
     kwargs:
       start_date: "2025-08-01"
-      end_date: "2025-08-31"
+      end_date: "2025-08-05"
       product: "aerosol"
       lead_time: [0, 3, 6, 9, 12, 15, 18, 21]
       # grib2io/xarray backend filtering compatible with PR 246 workflows
@@ -19,26 +19,40 @@ data:
       network_timeout: 300.0
       max_concurrent_requests: 4
 
+  gcafs_model:
+    type: "gefs"
+    kwargs:
+      files: /gpfs/f6/bil-fire3/scratch/Barry.Baker/tmp/gefs*/12/chem/pgrb2ap25/*.grib2
+      filters:
+        typeOfFirstFixedSurface: 10 # Entire atmosphere aerosol variables
+        shortName: "totAOD550"
+      # Local files are opened as-is; select the leads to analyze here (hours,
+      # same units as the readers' lead_time option). Keeping only leads 0-21h
+      # avoids repeated valid times where one cycle's 24h forecast overlaps the
+      # next cycle's analysis.
+      sel:
+        lead_time: [0, 3, 6, 9, 12, 15, 18, 21]
+
   aeronet_obs:
     type: "aeronet"
     kwargs:
       # AERONET data are retrieved from remote source (no local zarr required).
       start_date: "2025-08-01"
-      end_date: "2025-08-31"
+      end_date: "2025-08-05"
       # Chunk long ranges to reduce risk of remote endpoint resets/timeouts.
       n_chunks: 4
       retries: 8
       backoff_factor: 1.5
       interp_to_aod_values: [550., 670.]
       freq: "h"
-    zarr_store:
-      enabled: true
-      backend: "icechunk"
-      # Local Icechunk destination for virtual references.
-      icechunk_url: "./zarr_stores/aeronet_icechunk"
-      max_scan_attempts: 5
-      network_timeout: 300.0
-      max_concurrent_requests: 4
+    # zarr_store:
+    #   enabled: true
+    #   backend: "icechunk"
+    #   # Local Icechunk destination for virtual references.
+    #   icechunk_url: "./zarr_stores/aeronet_icechunk"
+    #   max_scan_attempts: 5
+    #   network_timeout: 300.0
+    #   max_concurrent_requests: 4
 
 pairing:
   pair_gefs_aeronet:
@@ -46,23 +60,42 @@ pairing:
     target: "aeronet_obs"
     method: "bilinear"
 
+  pair_gcafs_aeronet:
+    source: "gcafs_model"
+    target: "aeronet_obs"
+    method: "bilinear"
+
+# Merge both paired datasets along a 'model' dimension so plots can compare
+# GEFS and GCAFS side by side.
+combine:
+  model_comparison:
+    sources:
+      - pair_gefs_aeronet
+      - pair_gcafs_aeronet
+    dim: "model"
+
 statistics:
+  # Statistics run once per entry along the 'model' dimension, so both GEFS
+  # and GCAFS get the full metric suite. Results are written to a single
+  # combined table (gefs_gcafs_aeronet_stats.md) with one column per model,
+  # labeled by the pairing name (pair_gefs_aeronet, pair_gcafs_aeronet).
   aod_stats:
-    input: "pair_gefs_aeronet"
+    input: "model_comparison"
     metrics: ["rmse", "mb", "mae", "mse", "mape", "ioa_m", "fac2", "r2", "d1", "e1", "ac", "fss", "vets", "wassersteindistance"]
     kwargs:
       obs_var: "aod_550nm"
       mod_var: "totAOD550"
-      savename: "gefs_aeronet_stats.md"
+      savename: "gefs_gcafs_aeronet_stats.md"
 
 plots:
+  # Maps cannot overlay two models meaningfully, so this renders as a facet
+  # grid: one bias-map panel per model with shared color limits.
   spatial_aod:
-    input: "pair_gefs_aeronet"
+    input: "model_comparison"
     type: "spatial_bias_scatter"
     kwargs:
-      savename: "gefs_aeronet_spatial.png"
-      title: "GEFS vs AERONET AOD Comparison"
-      global_stat: "rmse"
+      savename: "gefs_gcafs_aeronet_spatial.png"
+      title: "GEFS and GCAFS vs AERONET AOD Bias"
       style: "pivotal_weather"
       discrete: false
       cbar_label: "AOD Bias (Model - Obs)"
@@ -71,33 +104,38 @@ plots:
       fact: 0.2
       vmin: -0.5
       vmax: 0.5
+      col_wrap: 2
 
+  # Scatter, timeseries and Taylor classes accept several model variables,
+  # so both models are drawn on one shared axis per figure.
   scatter_aod:
-    input: "pair_gefs_aeronet"
+    input: "model_comparison"
     type: "scatter"
     kwargs:
-      savename: "gefs_aeronet_scatter.png"
+      savename: "gefs_gcafs_aeronet_scatter.png"
       var1: "aod_550nm"
       var2: "totAOD550"
-      title: "GEFS vs AERONET AOD"
+      title: "GEFS and GCAFS vs AERONET AOD"
       edgecolors: 'black'
       linewidths: 0.1
       alpha: 0.7
 
   timeseries_bias:
-    input: "pair_gefs_aeronet"
+    input: "model_comparison"
     type: "timeseriesstat"
     kwargs:
-      savename: "gefs_aeronet_timeseries_bias.png"
+      savename: "gefs_gcafs_aeronet_timeseries_bias.png"
+      title: "GEFS and GCAFS vs AERONET AOD Bias"
       var1: "aod_550nm"
       var2: "totAOD550"
       freq: "3h"
 
   timeseries_rmse:
-    input: "pair_gefs_aeronet"
+    input: "model_comparison"
     type: "timeseriesstat"
     kwargs:
-      savename: "gefs_aeronet_timeseries_rmse.png"
+      savename: "gefs_gcafs_aeronet_timeseries_rmse.png"
+      title: "GEFS and GCAFS vs AERONET AOD RMSE"
       var1: "aod_550nm"
       var2: "totAOD550"
       freq: "3h"
@@ -105,13 +143,14 @@ plots:
       markersize: 1
 
   taylor:
-    input: "pair_gefs_aeronet"
+    input: "model_comparison"
     type: "taylor"
     kwargs:
-      savename: "gefs_aeronet_taylor.png"
+      savename: "gefs_gcafs_aeronet_taylor.png"
+      title: "GEFS and GCAFS vs AERONET AOD"
       col1: "aod_550nm"
       col2: "totAOD550"
-      label1: "GEFS vs AERONET AOD"
+      label1: "AERONET AOD"
 
 save:
   save_aeronet_obs:
@@ -119,7 +158,18 @@ save:
     backend: "zarr"
     url: "./zarr_stores/aeronet_obs_saved.zarr"
 
-  save_paired_data:
+  save_paired_gefs:
     input: "pair_gefs_aeronet"
     backend: "zarr"
     url: "./zarr_stores/pair_gefs_aeronet_saved.zarr"
+
+  save_paired_gcafs:
+    input: "pair_gcafs_aeronet"
+    backend: "zarr"
+    url: "./zarr_stores/pair_gcafs_aeronet_saved.zarr"
+
+  save_model_comparison:
+    input: "model_comparison"
+    backend: "zarr"
+    url: "./zarr_stores/gefs_gcafs_comparison_saved.zarr"
+

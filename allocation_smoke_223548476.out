@@ -1,0 +1,129 @@
+2026-11-18 10:06:56,444 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:06:56,444 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:06:56,444 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:06:56,444 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:06:56,444 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:06:56,444 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:06:56,444 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:06:56,444 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:06:56,511 - distributed.http.proxy - INFO - To route to workers diagnostics web server please install jupyter-server-proxy: python -m pip install jupyter-server-proxy
+2026-11-18 10:06:56,513 - distributed.scheduler - INFO - State start
+2026-11-18 10:06:56,517 - distributed.scheduler - INFO -   Scheduler at: tcp://172.25.65.236:44907
+2026-11-18 10:06:56,517 - distributed.scheduler - INFO -   dashboard at:  http://172.25.65.236:8787/status
+2026-11-18 10:06:56,519 - distributed.scheduler - INFO - Registering Worker plugin shuffle
+2026-11-18 10:06:56,572 - distributed.worker - INFO -       Start worker at:  tcp://172.25.65.236:42223
+2026-11-18 10:06:56,573 - distributed.worker - INFO -          Listening to:  tcp://172.25.65.236:42223
+2026-11-18 10:06:56,572 - distributed.worker - INFO -       Start worker at:  tcp://172.25.65.236:34673
+2026-11-18 10:06:56,573 - distributed.worker - INFO -          Listening to:  tcp://172.25.65.236:34673
+2026-11-18 10:06:56,573 - distributed.worker - INFO -           Worker name:                          2
+2026-11-18 10:06:56,573 - distributed.worker - INFO -          dashboard at:        172.25.65.236:34251
+2026-11-18 10:06:56,573 - distributed.worker - INFO - Waiting to connect to:  tcp://172.25.65.236:44907
+2026-11-18 10:06:56,573 - distributed.worker - INFO - -------------------------------------------------
+2026-11-18 10:06:56,573 - distributed.worker - INFO -           Worker name:                          3
+2026-11-18 10:06:56,573 - distributed.worker - INFO -               Threads:                          8
+2026-11-18 10:06:56,573 - distributed.worker - INFO -          dashboard at:        172.25.65.236:40141
+2026-11-18 10:06:56,573 - distributed.worker - INFO -                Memory:                 376.35 GiB
+2026-11-18 10:06:56,573 - distributed.worker - INFO -       Local Directory: /tmp/dask-scratch-space/worker-lcop1rom
+2026-11-18 10:06:56,573 - distributed.worker - INFO - Waiting to connect to:  tcp://172.25.65.236:44907
+2026-11-18 10:06:56,573 - distributed.worker - INFO - -------------------------------------------------
+2026-11-18 10:06:56,573 - distributed.worker - INFO -               Threads:                          8
+2026-11-18 10:06:56,573 - distributed.worker - INFO - -------------------------------------------------
+2026-11-18 10:06:56,573 - distributed.worker - INFO -                Memory:                 376.35 GiB
+2026-11-18 10:06:56,573 - distributed.worker - INFO -       Local Directory: /tmp/dask-scratch-space/worker-uyil52ar
+2026-11-18 10:06:56,573 - distributed.worker - INFO - -------------------------------------------------
+2026-11-18 10:06:56,601 - distributed.scheduler - INFO - Register worker addr: tcp://172.25.65.236:42223 name: 2
+2026-11-18 10:06:56,608 - distributed.scheduler - INFO - Starting worker compute stream, tcp://172.25.65.236:42223
+2026-11-18 10:06:56,608 - distributed.core - INFO - Starting established connection to tcp://172.25.65.236:36782
+2026-11-18 10:06:56,608 - distributed.scheduler - INFO - Register worker addr: tcp://172.25.65.236:34673 name: 3
+2026-11-18 10:06:56,608 - distributed.worker - INFO - Starting Worker plugin shuffle
+2026-11-18 10:06:56,608 - distributed.scheduler - INFO - Starting worker compute stream, tcp://172.25.65.236:34673
+2026-11-18 10:06:56,609 - distributed.core - INFO - Starting established connection to tcp://172.25.65.236:36796
+2026-11-18 10:06:56,609 - distributed.worker - INFO -         Registered to:  tcp://172.25.65.236:44907
+2026-11-18 10:06:56,609 - distributed.worker - INFO - -------------------------------------------------
+2026-11-18 10:06:56,609 - distributed.core - INFO - Starting established connection to tcp://172.25.65.236:44907
+2026-11-18 10:06:56,609 - distributed.worker - INFO - Starting Worker plugin shuffle
+2026-11-18 10:06:56,609 - distributed.worker - INFO -         Registered to:  tcp://172.25.65.236:44907
+2026-11-18 10:06:56,609 - distributed.worker - INFO - -------------------------------------------------
+2026-11-18 10:06:56,609 - distributed.core - INFO - Starting established connection to tcp://172.25.65.236:44907
+2026-11-18 10:06:56,663 - distributed.scheduler - INFO - Receive client connection: Client-b2378049-e361-11f1-8194-0040a688c2f7
+2026-11-18 10:06:56,664 - distributed.core - INFO - Starting established connection to tcp://172.25.65.236:36802
+2026-11-18 10:06:56,664 - mdt.dag - INFO - Building task graph...
+  [2m2026-11-18T15:06:57.960580Z[0m [33m WARN[0m [1;33micechunk_arrow_object_store[0m[33m: [33mThe LocalFileSystem storage is not safe for concurrent commits. If more than one thread/process will attempt to commit at the same time, prefer using object stores.[0m
+    [2;3mat[0m icechunk-arrow-object-store/src/lib.rs:220
+
+2026-11-18 10:07:01,506 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Using 'compute' as the default cluster.
+2026-11-18 10:07:01,506 - mdt.config - INFO - Automatically creating 'service' cluster with mode='allocation' for data orchestration.
+2026-11-18 10:07:01,506 - mdt.dag - INFO - Built task graph with 10 nodes and 10 edges.
+2026-11-18 10:07:01,507 - __main__ - ERROR - Allocation workflow failed: Prepared data missing or incomplete for offline execution:
+  - gefs_model: no prepared store at './zarr_stores/gefs_aerosol_icechunk'
+  - gcafs_model: no prepared store at './zarr_stores/gcafs_model_prep.zarr'
+  - aeronet_obs: no prepared store at './zarr_stores/aeronet_obs_prep.zarr'
+Run `mdt prep <config>` where data access is available (e.g. a DTN) before the compute stage.
+2026-11-18 10:07:01,508 - distributed.scheduler - INFO - Remove client Client-b2378049-e361-11f1-8194-0040a688c2f7
+2026-11-18 10:07:01,508 - distributed.core - INFO - Received 'close-stream' from tcp://172.25.65.236:36802; closing.
+2026-11-18 10:07:01,508 - distributed.scheduler - INFO - Remove client Client-b2378049-e361-11f1-8194-0040a688c2f7
+2026-11-18 10:07:01,508 - distributed.scheduler - INFO - Close client connection: Client-b2378049-e361-11f1-8194-0040a688c2f7
+2026-11-18 10:07:01,509 - distributed.scheduler - INFO - Closing scheduler. Reason: unknown
+2026-11-18 10:07:01,509 - distributed.scheduler - INFO - Scheduler closing all comms
+2026-11-18 10:07:01,510 - distributed.core - INFO - Connection to tcp://172.25.65.236:36782 has been closed.
+2026-11-18 10:07:01,510 - distributed.scheduler - INFO - Remove worker addr: tcp://172.25.65.236:42223 name: 2 (stimulus_id='handle-worker-cleanup-1795014421.5101573')
+2026-11-18 10:07:01,510 - distributed.worker - INFO - Stopping worker at tcp://172.25.65.236:42223. Reason: scheduler-close
+2026-11-18 10:07:01,510 - distributed.worker - INFO - Stopping worker at tcp://172.25.65.236:34673. Reason: scheduler-close
+2026-11-18 10:07:01,510 - distributed.core - INFO - Connection to tcp://172.25.65.236:36796 has been closed.
+2026-11-18 10:07:01,510 - distributed.worker - INFO - Removing Worker plugin shuffle
+2026-11-18 10:07:01,510 - distributed.scheduler - INFO - Remove worker addr: tcp://172.25.65.236:34673 name: 3 (stimulus_id='handle-worker-cleanup-1795014421.5103557')
+2026-11-18 10:07:01,510 - distributed.scheduler - INFO - Lost all workers
+2026-11-18 10:07:01,510 - distributed.worker - INFO - Removing Worker plugin shuffle
+2026-11-18 10:07:01,510 - distributed.batched - INFO - Batched Comm Closed <TCP (closed) Worker->Scheduler local=tcp://172.25.65.236:36782 remote=tcp://172.25.65.236:44907>
+Traceback (most recent call last):
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/distributed/comm/tcp.py", line 298, in write
+    raise StreamClosedError()
+tornado.iostream.StreamClosedError: Stream is closed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/distributed/batched.py", line 115, in _background_send
+    nbytes = yield coro
+             ^^^^^^^^^^
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/tornado/gen.py", line 783, in run
+    value = future.result()
+            ^^^^^^^^^^^^^^^
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/distributed/comm/tcp.py", line 308, in write
+    convert_stream_closed_error(self, e)
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/distributed/comm/tcp.py", line 137, in convert_stream_closed_error
+    raise CommClosedError(f"in {obj}: {exc}") from exc
+distributed.comm.core.CommClosedError: in <TCP (closed) Worker->Scheduler local=tcp://172.25.65.236:36782 remote=tcp://172.25.65.236:44907>: Stream is closed
+2026-11-18 10:07:01,510 - distributed.batched - INFO - Batched Comm Closed <TCP (closed) Worker->Scheduler local=tcp://172.25.65.236:36796 remote=tcp://172.25.65.236:44907>
+Traceback (most recent call last):
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/distributed/comm/tcp.py", line 298, in write
+    raise StreamClosedError()
+tornado.iostream.StreamClosedError: Stream is closed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/distributed/batched.py", line 115, in _background_send
+    nbytes = yield coro
+             ^^^^^^^^^^
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/tornado/gen.py", line 783, in run
+    value = future.result()
+            ^^^^^^^^^^^^^^^
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/distributed/comm/tcp.py", line 308, in write
+    convert_stream_closed_error(self, e)
+  File "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/lib/python3.12/site-packages/distributed/comm/tcp.py", line 137, in convert_stream_closed_error
+    raise CommClosedError(f"in {obj}: {exc}") from exc
+distributed.comm.core.CommClosedError: in <TCP (closed) Worker->Scheduler local=tcp://172.25.65.236:36796 remote=tcp://172.25.65.236:44907>: Stream is closed
+2026-11-18 10:07:01,518 - distributed.core - INFO - Received 'close-stream' from tcp://172.25.65.236:44907; closing.
+2026-11-18 10:07:01,518 - distributed.core - INFO - Received 'close-stream' from tcp://172.25.65.236:44907; closing.
+srun: error: c6n0484: task 1: Exited with exit code 1
+srun: Terminating StepId=223548476.0
+ALLOC_EXIT=1

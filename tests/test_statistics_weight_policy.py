@@ -1,6 +1,7 @@
 """Regression tests for explicit statistical weighting policy."""
 
 import numpy as np
+import pandas as pd
 import pytest
 import xarray as xr
 
@@ -107,17 +108,39 @@ def test_multimodel_statistics_returns_results_by_model(mocker):
     assert float(result["b"]["mb"]) == pytest.approx(3.0)
 
 
-def test_multimodel_statistics_splits_savename(mocker, tmp_path):
-    """Give each per-model statistics output its own file name."""
+def test_multimodel_statistics_combined_savename(mocker, tmp_path):
+    """Write one combined table with a column per model instead of per-model files."""
     data = xr.Dataset(
         {"obs": (("model", "x"), [[0.0], [0.0]]), "mod": (("model", "x"), [[1.0], [2.0]])},
         coords={"model": ["a", "b"]},
     )
     single = mocker.patch("mdt.tasks.statistics._compute_single", side_effect=[{"mb": 1}, {"mb": 2}])
-    result = compute_statistics("multi", ["mb"], data, {"savename": str(tmp_path / "stats.csv")})
+    savename = tmp_path / "stats.csv"
+    result = compute_statistics("multi", ["mb"], data, {"savename": str(savename)})
     assert result == {"a": {"mb": 1}, "b": {"mb": 2}}
-    assert single.call_args_list[0].args[3]["savename"].endswith("stats_a.csv")
-    assert single.call_args_list[1].args[3]["savename"].endswith("stats_b.csv")
+    # Per-model calls no longer carry their own savename.
+    assert "savename" not in single.call_args_list[0].args[3]
+    assert "savename" not in single.call_args_list[1].args[3]
+    # Exactly one file, with model labels as columns.
+    assert list(tmp_path.iterdir()) == [savename]
+    df = pd.read_csv(savename, index_col=0)
+    assert list(df.columns) == ["a", "b"]
+    assert df.loc["mb", "a"] == 1
+    assert df.loc["mb", "b"] == 2
+
+
+def test_multimodel_statistics_combined_markdown(tmp_path):
+    """Markdown output labels each model column by its name."""
+    data = xr.Dataset(
+        {"obs": (("model", "x"), [[0.0, 0.0], [0.0, 0.0]]), "mod": (("model", "x"), [[1.0, 3.0], [2.0, 4.0]])},
+        coords={"model": ["gefs", "gcafs"]},
+    )
+    savename = tmp_path / "stats.md"
+    result = compute_statistics("multi", ["mb"], data, {"obs_var": "obs", "mod_var": "mod", "savename": str(savename)})
+    assert set(result) == {"gefs", "gcafs"}
+    text = savename.read_text()
+    assert "| Metric | gefs | gcafs |" in text
+    assert list(tmp_path.iterdir()) == [savename]
 
 
 def test_unpaired_dataarray_metric_receives_single_input(mocker):

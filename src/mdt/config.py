@@ -52,7 +52,7 @@ class ConfigParser:
                 raise ValueError(msg)
 
         section_errors = []
-        for section_name in ("data", "pairing", "combine", "statistics", "plots", "reductions", "save", "execution"):
+        for section_name in ("data", "pairing", "combine", "statistics", "plots", "reductions", "save", "execution", "prep"):
             if section_name in self.config and not isinstance(self.config[section_name], dict):
                 section_errors.append(f"'{section_name}' section must be a dictionary, got {type(self.config[section_name]).__name__}.")
         if section_errors:
@@ -69,7 +69,7 @@ class ConfigParser:
             raise ValueError("Configuration validation failed: execution.clusters must be a mapping.")
         if "clusters" in execution_cfg and not clusters:
             raise ValueError("Configuration validation failed: execution.clusters must contain at least one cluster.")
-        valid_modes = {"local", "hera", "jet", "orion", "hercules", "gaea", "ursa", "wcoss2", "slurm", "pbs", "lsf"}
+        valid_modes = {"local", "allocation", "hera", "jet", "orion", "hercules", "gaea", "ursa", "wcoss2", "slurm", "pbs", "lsf"}
         for cluster_name, cluster_cfg in clusters.items():
             if not isinstance(cluster_cfg, dict):
                 raise ValueError(f"Configuration validation failed: execution.clusters.{cluster_name} must be a mapping.")
@@ -90,6 +90,47 @@ class ConfigParser:
             raise ValueError(
                 f"Configuration validation failed: execution.default_cluster '{default_cluster}' is not defined in execution.clusters."
             )
+        cache_cluster = execution_cfg.get("cache_cluster")
+        if cache_cluster is not None and cache_cluster not in clusters:
+            raise ValueError(
+                f"Configuration validation failed: execution.cache_cluster '{cache_cluster}' is not defined in execution.clusters."
+            )
+        orchestrator = execution_cfg.get("orchestrator", "prefect")
+        if orchestrator not in {"prefect", "dask", "ecflow"}:
+            raise ValueError(
+                f"Configuration validation failed: execution.orchestrator must be one of ['dask', 'ecflow', 'prefect'], got {orchestrator!r}."
+            )
+
+        # Fixed-allocation mode (feature 001-prep-fixed-allocation): workers are
+        # bootstrapped inside an existing SLURM allocation via SLURMRunner, so it
+        # cannot be mixed with elastic (job-submitting) clusters and requires the
+        # plain-Dask engine.
+        modes = {str(cfg.get("mode", "local")).lower() for cfg in clusters.values() if isinstance(cfg, dict)}
+        if "allocation" in modes:
+            elastic = modes - {"allocation", "local"}
+            if elastic:
+                raise ValueError(
+                    "Configuration validation failed: execution.clusters mode 'allocation' cannot be mixed with elastic cluster modes "
+                    f"{sorted(elastic)}; use a single allocation cluster (plus optional local clusters)."
+                )
+            if orchestrator != "dask":
+                raise ValueError(
+                    "Configuration validation failed: execution.orchestrator must be 'dask' when any cluster uses mode 'allocation', "
+                    f"got {orchestrator!r}."
+                )
+
+        allocation_cfg = execution_cfg.get("allocation")
+        if allocation_cfg is not None:
+            self._validate_allocation(allocation_cfg)
+
+        prep_cfg = self.config.get("prep")
+        if prep_cfg is not None:
+            for key in ("store_dir", "summary_file"):
+                if key in prep_cfg and (not isinstance(prep_cfg[key], str) or not prep_cfg[key]):
+                    raise ValueError(f"Configuration validation failed: prep.{key} must be a non-empty path string, got {prep_cfg[key]!r}.")
+            unknown = set(prep_cfg) - {"store_dir", "summary_file"}
+            if unknown:
+                raise ValueError(f"Configuration validation failed: unknown prep keys {sorted(unknown)}; supported: ['store_dir', 'summary_file'].")
 
         # Ensure 'data' is a dictionary if it exists
         if "data" in self.config:
@@ -228,6 +269,38 @@ class ConfigParser:
                     )
 
         self._validate_region_masking()
+
+    @staticmethod
+    def _validate_allocation(allocation_cfg: Any) -> None:
+        """Validate execution.allocation per data-model.md AllocationSpec."""
+        if not isinstance(allocation_cfg, dict):
+            raise ValueError("Configuration validation failed: execution.allocation must be a mapping.")
+        int_keys = ("nodes", "ntasks_per_node", "cpus_per_task")
+        for key in int_keys:
+            if key in allocation_cfg:
+                value = allocation_cfg[key]
+                if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                    raise ValueError(f"Configuration validation failed: execution.allocation.{key} must be a positive integer, got {value!r}.")
+        str_keys = ("memory", "walltime", "account", "partition", "qos", "slurm_cluster", "interface", "python")
+        for key in str_keys:
+            if key in allocation_cfg and allocation_cfg[key] is not None:
+                if not isinstance(allocation_cfg[key], str) or not allocation_cfg[key]:
+                    raise ValueError(f"Configuration validation failed: execution.allocation.{key} must be a non-empty string, got {allocation_cfg[key]!r}.")
+        if "prologue" in allocation_cfg:
+            prologue = allocation_cfg["prologue"]
+            if not isinstance(prologue, list) or any(not isinstance(line, str) for line in prologue):
+                raise ValueError("Configuration validation failed: execution.allocation.prologue must be a list of shell command strings.")
+        nodes = allocation_cfg.get("nodes")
+        ntasks_per_node = allocation_cfg.get("ntasks_per_node")
+        if isinstance(nodes, int) and isinstance(ntasks_per_node, int) and nodes * ntasks_per_node < 3:
+            raise ValueError(
+                "Configuration validation failed: execution.allocation nodes*ntasks_per_node must be >= 3 "
+                "(SLURMRunner needs one task each for scheduler, client, and at least one worker), "
+                f"got {nodes}*{ntasks_per_node}={nodes * ntasks_per_node}."
+            )
+        unknown = set(allocation_cfg) - set(int_keys) - set(str_keys) - {"prologue"}
+        if unknown:
+            raise ValueError(f"Configuration validation failed: unknown execution.allocation keys {sorted(unknown)}.")
 
     def _validate_region_masking(self) -> None:
         """Validate mask and regions configuration."""

@@ -11,6 +11,7 @@ import xarray as xr
 
 from mdt.tasks.data import (
     _expand_local_grib_files,
+    _grib_forecast_time_preprocess,
     _is_unsupported_keyword_type_error,
     _promote_time_coordinate,
     _reader_accepts_as_xarray,
@@ -312,3 +313,204 @@ def test_load_data_rejects_empty_xarray_result(mocker):
     mocker.patch("monetio.load", return_value=xr.Dataset())
     with pytest.raises(ValueError, match="Loaded dataset 'empty' is empty"):
         load_data("empty", "cmaq", {})
+
+
+def _scalar_forecast_grib_dataset(reference: str, lead_hours: int) -> xr.Dataset:
+    """Mimic one grib2io GRIB file: scalar CF forecast coordinates, no time dim."""
+    reference_time = np.datetime64(reference)
+    lead = np.timedelta64(lead_hours, "h")
+    return xr.Dataset(
+        {"totAOD550": (("y", "x"), [[0.1]])},
+        coords={
+            "refDate": ((), reference_time, {"standard_name": "forecast_reference_time"}),
+            "leadTime": ((), lead, {"standard_name": "forecast_period"}),
+            "validDate": ((), reference_time + lead, {"standard_name": "time"}),
+        },
+    )
+
+
+def test_grib_preprocess_promotes_scalar_forecast_coords_to_time_index():
+    """Per-file promotion gives each GRIB sample a canonical indexed time axis."""
+    ds = _scalar_forecast_grib_dataset("2025-08-01", 3)
+    result = _grib_forecast_time_preprocess(ds)
+
+    assert result.sizes["time"] == 1
+    assert "time" in result.indexes
+    assert result["time"].dims == ("time",)
+    assert pd.Timestamp(result["time"].values[0]) == pd.Timestamp("2025-08-01T03:00:00")
+    assert result["valid_time"].dims == ("time",)
+    assert result["valid_time"].attrs["standard_name"] == "time"
+    assert result["forecast_reference_time"].dims == ("time",)
+    assert result["lead_time"].dims == ("time",)
+
+
+def test_grib_preprocess_passthrough_for_indexed_or_unrelated_datasets():
+    """Datasets with a time dim or without CF forecast coords are untouched."""
+    indexed = xr.Dataset({"value": ("time", [1.0])}, coords={"time": pd.date_range("2025-08-01", periods=1)})
+    assert _grib_forecast_time_preprocess(indexed) is indexed
+
+    plain = xr.Dataset({"value": ("sample", [1.0, 2.0])})
+    assert _grib_forecast_time_preprocess(plain) is plain
+
+
+def test_multi_file_grib_concat_keeps_per_sample_valid_times():
+    """Concatenating preprocessed GRIB files retains every sample's valid time.
+
+    Regression for ``ValueError: Dimension time already exists``: without the
+    preprocess, coords="minimal" collapses the scalar validDate of every file
+    to the first file's value and leaves ``time`` without an index.
+    """
+    files = [
+        _grib_forecast_time_preprocess(_scalar_forecast_grib_dataset("2025-08-01", 0)),
+        _grib_forecast_time_preprocess(_scalar_forecast_grib_dataset("2025-08-01", 3)),
+        _grib_forecast_time_preprocess(_scalar_forecast_grib_dataset("2025-08-02", 0)),
+    ]
+    with xr.set_options(use_new_combine_kwarg_defaults=True):
+        combined = xr.concat(files, dim="time", coords="minimal", compat="override")
+
+    assert "time" in combined.indexes
+    expected = pd.DatetimeIndex(["2025-08-01", "2025-08-01 03:00", "2025-08-02"]).values
+    np.testing.assert_array_equal(combined["time"].values, expected)
+
+    normalized = _promote_time_coordinate(combined, "multi-file")
+    np.testing.assert_array_equal(normalized["time"].values, expected)
+    np.testing.assert_array_equal(normalized["valid_time"].values, expected)
+    np.testing.assert_array_equal(
+        normalized["valid_time"].values,
+        normalized["forecast_reference_time"].values + normalized["lead_time"].values,
+    )
+    assert "time" in normalized.indexes
+
+
+def test_local_grib_expansion_injects_forecast_preprocess(tmp_path):
+    """Multi-file local GRIB loads get the preprocess; single files do not."""
+    paths = [tmp_path / "b.grib2", tmp_path / "a.grib2"]
+    for path in paths:
+        path.touch()
+    result = _expand_local_grib_files({"files": str(tmp_path / "*.grib2")}, "gefs", "model")
+    assert result["preprocess"] is _grib_forecast_time_preprocess
+
+    single = _expand_local_grib_files({"files": str(paths[0])}, "gefs", "model")
+    assert "preprocess" not in single
+
+    def user_preprocess(ds):
+        return ds
+
+    custom = _expand_local_grib_files({"files": str(tmp_path / "*.grib2"), "preprocess": user_preprocess}, "gefs", "model")
+    assert custom["preprocess"] is user_preprocess
+
+
+def test_promote_time_scalar_alias_does_not_expand_existing_dim(caplog):
+    """A scalar valid-time alias must not expand an already existing time dim."""
+    data = xr.Dataset(
+        {"value": ("time", [1.0, 2.0])},
+        coords={
+            "init": ("time", pd.to_datetime(["2025-08-01", "2025-08-01"]), {"standard_name": "forecast_reference_time"}),
+            "lead": ("time", [0, 3], {"standard_name": "forecast_period", "units": "hours"}),
+            "validDate": ((), np.datetime64("2025-08-01"), {"standard_name": "time"}),
+        },
+    )
+    with caplog.at_level("WARNING"):
+        normalized = _promote_time_coordinate(data, "collapsed")
+    assert "only a scalar valid time" in caplog.text
+    assert normalized.sizes["time"] == 2
+    assert "validDate" in normalized.coords
+
+
+def test_promote_time_single_record_dim_gets_scalar_valid_time():
+    """A one-record time axis is labeled from a scalar valid time."""
+    data = xr.Dataset(
+        {"value": ("time", [1.0])},
+        coords={
+            "init": ("time", pd.to_datetime(["2025-08-01"]), {"standard_name": "forecast_reference_time"}),
+            "lead": ("time", [3], {"standard_name": "forecast_period", "units": "hours"}),
+            "validDate": ((), np.datetime64("2025-08-01T03:00:00"), {"standard_name": "time"}),
+        },
+    )
+    normalized = _promote_time_coordinate(data, "single")
+    assert pd.Timestamp(normalized["time"].values[0]) == pd.Timestamp("2025-08-01T03:00:00")
+
+
+def test_promote_time_prefers_canonical_coords_over_aliases():
+    """Canonical coordinates win role resolution, avoiding rename collisions."""
+    data = xr.Dataset(
+        {"value": ("time", [1.0, 2.0])},
+        coords={
+            "time": pd.date_range("2025-08-01", periods=2, freq="3h"),
+            "refDate": ((), np.datetime64("2025-08-01"), {"standard_name": "forecast_reference_time"}),
+            "forecast_reference_time": ("time", pd.to_datetime(["2025-08-01", "2025-08-01"])),
+        },
+    )
+    normalized = _promote_time_coordinate(data, "canonical")
+    assert normalized["forecast_reference_time"].dims == ("time",)
+    np.testing.assert_array_equal(normalized["time"].values, data["time"].values)
+
+
+def _multi_cycle_forecast_dataset():
+    """Two cycles whose lead times repeat on the shared time axis."""
+    times = pd.DatetimeIndex(["2025-08-01", "2025-08-01 03:00", "2025-08-02", "2025-08-02 03:00"])
+    return xr.Dataset(
+        {"value": ("time", [1.0, 2.0, 3.0, 4.0])},
+        coords={
+            "time": times,
+            "forecast_reference_time": ("time", pd.DatetimeIndex(["2025-08-01", "2025-08-01", "2025-08-02", "2025-08-02"]).values),
+            "lead_time": ("time", np.array([0, 3, 0, 3], dtype="timedelta64[h]")),
+        },
+    )
+
+
+def test_sel_labels_selects_repeated_lead_times_by_value():
+    """Non-unique forecast coordinates are selected with value masks, not label indexing."""
+    from mdt.tasks.data import _sel_labels
+
+    data = _multi_cycle_forecast_dataset()
+    result = _sel_labels(data, {"lead_time": [np.timedelta64(3, "h")]})
+    assert result.sizes["time"] == 2
+    np.testing.assert_array_equal(result["value"].values, [2.0, 4.0])
+
+
+def test_sel_labels_slice_on_non_unique_coordinate():
+    """Slice bounds work on repeated coordinates where pandas label slicing fails."""
+    from mdt.tasks.data import _sel_labels
+
+    data = _multi_cycle_forecast_dataset()
+    result = _sel_labels(data, {"lead_time": slice(np.timedelta64(0, "h"), np.timedelta64(3, "h"))})
+    assert result.sizes["time"] == 4
+
+
+def test_sel_labels_parses_string_timedelta_labels():
+    """YAML-friendly strings like '3 hours' select timedelta coordinates."""
+    from mdt.tasks.data import _sel_labels
+
+    data = _multi_cycle_forecast_dataset()
+    result = _sel_labels(data, {"lead_time": ["0 hours", "3 hours"]})
+    assert result.sizes["time"] == 4
+    result = _sel_labels(data, {"lead_time": slice("0 hours", "3 hours")})
+    assert result.sizes["time"] == 4
+
+
+def test_sel_labels_integer_hours_select_timedelta_coordinate():
+    """Plain numbers mean hours, matching the readers' lead_time option."""
+    from mdt.tasks.data import _sel_labels
+
+    data = _multi_cycle_forecast_dataset()
+    result = _sel_labels(data, {"lead_time": [0, 3]})
+    assert result.sizes["time"] == 4
+    result = _sel_labels(data, {"lead_time": 3})
+    assert result.sizes["time"] == 2
+    np.testing.assert_array_equal(result["value"].values, [2.0, 4.0])
+    result = _sel_labels(data, {"lead_time": slice(0, 3)})
+    assert result.sizes["time"] == 4
+
+
+def test_sel_labels_unique_index_uses_label_selection():
+    """Unique coordinates keep ordinary label-based selection semantics."""
+    from mdt.tasks.data import _sel_labels
+
+    data = xr.Dataset(
+        {"value": ("time", [1.0, 2.0, 3.0])},
+        coords={"time": pd.date_range("2025-08-01", periods=3)},
+    )
+    result = _sel_labels(data, {"time": slice("2025-08-01", "2025-08-02")})
+    assert result.sizes["time"] == 2
+    np.testing.assert_array_equal(result["value"].values, [1.0, 2.0])

@@ -78,9 +78,12 @@ class TestPrefectVirtualiZarrIntegration:
         mock_distributed.Client = MagicMock()
         mocker.patch.dict(sys.modules, {"dask.distributed": mock_distributed})
 
-        # We also need to make sure dask itself has the distributed attribute if it's already in sys.modules
+        # We also need to make sure dask itself has the distributed attribute if it's already in sys.modules.
+        # Use patch.object so the real attribute is restored after the test —
+        # a direct assignment leaks the mock into every later test that uses
+        # dask.distributed (e.g. real local-cluster prep/allocation tests).
         if "dask" in sys.modules:
-            sys.modules["dask"].distributed = mock_distributed
+            mocker.patch.object(sys.modules["dask"], "distributed", mock_distributed)
         else:
             mock_dask = types.ModuleType("dask")
             mock_dask.distributed = mock_distributed

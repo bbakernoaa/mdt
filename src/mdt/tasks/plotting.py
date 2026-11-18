@@ -86,6 +86,105 @@ def _get_var_pair(plot_kwargs: Dict[str, Any]) -> tuple[str | None, str | None]:
         col1 = str(plot_kwargs.get("y"))
     return col1, col2
 
+# Plot types whose monet-plots classes accept a list of model variables and
+# render every model on one shared axis (overlay comparison).
+_OVERLAY_PLOT_TYPES = frozenset({"scatter", "timeseriesstat", "timeseriesstats", "taylor"})
+# Single-map plot types: overlaying several models on one map is inappropriate,
+# so multi-model inputs are rendered as a facet grid (one panel per model).
+_FACET_PLOT_TYPES = frozenset({"spatial_bias_scatter", "spatial", "spatial_contour"})
+
+
+def _pivot_model_columns(
+    data: xr.Dataset, model_dim: str, kwargs: Dict[str, Any]
+) -> tuple[xr.Dataset, Dict[str, Any]] | None:
+    """Turn a model-indexed dataset into per-model columns for overlay plots.
+
+    The observation variable is shared across models (taken from the first
+    model); the model variable becomes one column per model, named after the
+    model so legends read cleanly. Returns ``None`` when the plot kwargs do not
+    declare a single observation/model variable pair, leaving the caller to
+    fall back to per-model plots.
+    """
+    obs_key = next((k for k in ("var1", "col1", "x") if kwargs.get(k)), None)
+    mod_key = next((k for k in ("var2", "col2", "y") if kwargs.get(k)), None)
+    if obs_key is None or mod_key is None:
+        return None
+    obs_var, mod_var = kwargs[obs_key], kwargs[mod_key]
+    if not isinstance(obs_var, str) or not isinstance(mod_var, str):
+        return None
+    if obs_var not in data.variables or mod_var not in data.variables:
+        return None
+
+    models = data[model_dim].values.tolist()
+    pivoted = data.sel({model_dim: models[0]})[[obs_var]]
+    columns: list[str] = []
+    for model in models:
+        label = str(model)
+        if label == obs_var or label in pivoted.variables:
+            label = f"{mod_var}_{_sanitize_region_name(label)}"
+        pivoted[label] = data.sel({model_dim: model})[mod_var]
+        columns.append(label)
+    pivoted.attrs = dict(data.attrs)
+
+    overlay_kwargs = dict(kwargs)
+    overlay_kwargs[mod_key] = columns
+    return pivoted, overlay_kwargs
+
+
+def _generate_facet_plot(
+    name: str,
+    plot_type: str,
+    input_data: xr.Dataset,
+    model_dim: str,
+    kwargs: Dict[str, Any],
+) -> Any:
+    """Render one panel per model in a single facet-gridded figure.
+
+    Used for map-style plots where overlaying models on one axis would be
+    misleading. Each panel is drawn by the same per-model plot class on a
+    shared figure; panels keep identical color limits when ``vmin``/``vmax``
+    are configured so they remain visually comparable.
+    """
+    import math
+
+    import matplotlib
+
+    matplotlib.use("agg")
+    import matplotlib.pyplot as plt
+
+    kwargs = dict(kwargs)
+    savename = kwargs.pop("savename", f"{name}.png")
+    title = kwargs.pop("title", None)
+    col_wrap = max(1, int(kwargs.pop("col_wrap", 2)))
+    figsize = kwargs.pop("figsize", None)
+
+    models = input_data[model_dim].values.tolist()
+    ncols = min(col_wrap, len(models))
+    nrows = math.ceil(len(models) / ncols)
+    if figsize is None:
+        figsize = (6.0 * ncols, 5.0 * nrows)
+
+    fig = plt.figure(figsize=figsize)
+    subplot_kw: Dict[str, Any] = {}
+    if plot_type.lower() in _FACET_PLOT_TYPES:
+        import cartopy.crs as ccrs
+
+        subplot_kw["projection"] = ccrs.PlateCarree()
+
+    for index, model in enumerate(models):
+        ax = fig.add_subplot(nrows, ncols, index + 1, **subplot_kw)
+        panel_kwargs = dict(kwargs)
+        # Panels share the figure: suppress per-panel save/close and titles.
+        panel_kwargs.update(fig=fig, ax=ax, savename=None, auto_title=False)
+        _generate_static_plot(f"{name}_{model}", plot_type, input_data.sel({model_dim: model}), panel_kwargs)
+        ax.set_title(str(model))
+
+    fig.suptitle(title or name.replace("_", " ").title())
+    fig.tight_layout()
+    fig.savefig(savename)
+    plt.close(fig)
+    logger.info("Saved Track A facet plot '%s' (%d models) to %s", name, len(models), savename)
+    return fig
 
 def _promote_constructor_kwargs(
     plot_type: str, constructor_kwargs: Dict[str, Any], plot_kwargs: Dict[str, Any]
@@ -182,12 +281,17 @@ def _build_plot_title(
     main = title_main
     if not main:
         if col1 and col2:
-            main = f"{col2} vs {col1}"
+            col2_text = ", ".join(str(c) for c in col2) if isinstance(col2, (list, tuple)) else str(col2)
+            main = f"{col2_text} vs {col1}"
         else:
             main = name.replace("_", " ").title()
 
     time_range = _format_time_range(data)
 
+    # A single global statistic is only meaningful for one observation/model
+    # pair; overlay plots with several model columns skip it.
+    if isinstance(col2, (list, tuple)):
+        col2 = None
     stat_name = requested_global_stat or plot_kwargs.get("stat")
     if not stat_name and col1 and col2:
         if "rmse" in plot_type.lower():
@@ -268,6 +372,16 @@ def generate_plot(
     input_data = normalize(input_data)
     model_dim = kwargs.pop("model_dim", input_data.attrs.get("mdt_model_dim", "model") if isinstance(input_data, xr.Dataset) else "model")
     if isinstance(input_data, xr.Dataset) and model_dim in input_data.dims:
+        if track == "A" and plot_type.lower() in _OVERLAY_PLOT_TYPES:
+            # Scatter/Taylor/timeseries-stat classes plot a list of model
+            # variables on one axis: compare all models in a single figure.
+            pivoted = _pivot_model_columns(input_data, model_dim, kwargs)
+            if pivoted is not None:
+                pivot_data, pivot_kwargs = pivoted
+                return _generate_single_plot(name, plot_type, pivot_data, pivot_kwargs, track)
+        if track == "A" and plot_type.lower() in _FACET_PLOT_TYPES:
+            # Maps cannot overlay models meaningfully: one panel per model.
+            return _generate_facet_plot(name, plot_type, input_data, model_dim, kwargs)
         results = {}
         for model in input_data[model_dim].values.tolist():
             model_kwargs = dict(kwargs)
@@ -699,6 +813,8 @@ def _generate_static_plot(
             "var2",
             "time_col",
             "second_dim",
+            "fig",
+            "ax",
         }
         constructor_kwargs = {k: v for k, v in kwargs.items() if k in constructor_keys}
         plot_kwargs = {k: v for k, v in kwargs.items() if k not in constructor_keys}
@@ -759,11 +875,14 @@ def _generate_static_plot(
             )
             plot_obj.ax.set_title(built_title)
 
-        plot_obj.save(savename)
-        logger.info("Saved Track A plot '%s' to %s via monet-plots", name, savename)
+        # savename=None marks a facet panel drawn on a shared figure: the
+        # facet caller saves and closes the figure once all panels are drawn.
+        if savename is not None:
+            plot_obj.save(savename)
+            logger.info("Saved Track A plot '%s' to %s via monet-plots", name, savename)
 
-        if hasattr(plot_obj, "close"):
-            plot_obj.close()
+            if hasattr(plot_obj, "close"):
+                plot_obj.close()
 
         return plot_obj
 

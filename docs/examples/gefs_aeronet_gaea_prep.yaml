@@ -1,0 +1,151 @@
+# Two-stage GEFS + GCAFS vs AERONET workflow for Gaea C6 fixed allocations
+# (feature 001-prep-fixed-allocation).
+#
+# Stage 1 - PREP (run where data access exists, e.g. a DTN or login node):
+#   mdt prep docs/examples/gefs_aeronet_gaea_prep.yaml
+#   Retrieves/prepares every dataset to local icechunk/zarr stores with
+#   completeness manifests. Idempotent: reruns reuse complete stores.
+#   Prep always runs on local workers at the launch point, so it works
+#   unchanged from a DTN shell (respect the dtn QoS 4-CPU-per-job cap when
+#   launching it as a batch job).
+#
+# Stage 2 - COMPUTE (inside a fixed SLURM allocation, network-isolated OK):
+#   mdt script docs/examples/gefs_aeronet_gaea_prep.yaml -o run_analysis.slurm
+#   sbatch run_analysis.slurm
+#   The script requests the allocation below and bootstraps scheduler +
+#   client + workers across the allocated tasks via SLURMRunner
+#   (srun python -m mdt.allocation ...). Zero extra job submissions; all
+#   loads are served from the prepared stores (fail-fast if any is missing).
+#
+# Interactive smoke test:
+#   salloc -M c6 -p batch -A bil-fire3 -N 1 --ntasks=4 --cpus-per-task=8 -t 00:30:00
+#   srun -n 4 /gpfs/f6/bil-fire3/world-shared/python/envs/mdt/bin/python \
+#        -m mdt.allocation docs/examples/gefs_aeronet_gaea_prep.yaml
+
+data:
+  gefs_model:
+    type: "gefs"
+    kwargs:
+      start_date: "2025-08-01"
+      end_date: "2025-08-05"
+      product: "aerosol"
+      lead_time: [0, 3, 6, 9, 12, 15, 18, 21]
+      filters:
+        typeOfFirstFixedSurface: 10
+        shortName: "totAOD550"
+    # REMOTE source: prep downloads the data and materializes it as real
+    # local zarr (./zarr_stores/gefs_model_prep.zarr). The compute stage
+    # never touches S3. No zarr_store/icechunk references needed here.
+
+  gcafs_model:
+    type: "gefs"
+    kwargs:
+      files: /gpfs/f6/bil-fire3/scratch/Barry.Baker/tmp/gefs*/12/chem/pgrb2ap25/*.grib2
+      filters:
+        typeOfFirstFixedSurface: 10
+        shortName: "totAOD550"
+      sel:
+        lead_time: [0, 3, 6, 9, 12, 15, 18, 21]
+    # LOCAL source (files already on shared GPFS): prep creates icechunk
+    # VIRTUAL REFERENCES (byte-range pointers into the original files) — no
+    # decode/copy of the data. The compute stage reads through the references
+    # on demand. Icechunk references are only used for local files; remote
+    # data is always materialized as real local zarr.
+    zarr_store:
+      enabled: true
+      backend: "icechunk"
+      icechunk_url: "./zarr_stores/gcafs_aerosol_icechunk"
+      max_scan_attempts: 5
+      network_timeout: 300.0
+      max_concurrent_requests: 4
+
+  aeronet_obs:
+    type: "aeronet"
+    kwargs:
+      start_date: "2025-08-01"
+      # End at 08-03: the AERONET web service lags ~2 days, so later dates are
+      # not retrievable yet; requesting them leaves a permanent coverage gap.
+      end_date: "2025-08-03"
+      n_chunks: 4
+      retries: 8
+      backoff_factor: 1.5
+      interp_to_aod_values: [550., 670.]
+      freq: "h"
+
+prep:
+  store_dir: ./zarr_stores
+  summary_file: prep_summary.json
+
+pairing:
+  pair_gefs_aeronet:
+    source: "gefs_model"
+    target: "aeronet_obs"
+    method: "bilinear"
+
+  pair_gcafs_aeronet:
+    source: "gcafs_model"
+    target: "aeronet_obs"
+    method: "bilinear"
+
+combine:
+  model_comparison:
+    sources:
+      - pair_gefs_aeronet
+      - pair_gcafs_aeronet
+    dim: "model"
+
+statistics:
+  aod_stats:
+    input: "model_comparison"
+    metrics: ["rmse", "mb", "mae", "r2", "ioa_m", "fac2"]
+    kwargs:
+      obs_var: "aod_550nm"
+      mod_var: "totAOD550"
+      savename: "gefs_gcafs_aeronet_stats.md"
+
+plots:
+  scatter_aod:
+    input: "model_comparison"
+    type: "scatter"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_scatter.png"
+      var1: "aod_550nm"
+      var2: "totAOD550"
+      title: "GEFS and GCAFS vs AERONET AOD"
+
+  taylor:
+    input: "model_comparison"
+    type: "taylor"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_taylor.png"
+      col1: "aod_550nm"
+      col2: "totAOD550"
+
+save:
+  save_model_comparison:
+    input: "model_comparison"
+    backend: "zarr"
+    url: "./zarr_stores/gefs_gcafs_comparison_saved.zarr"
+
+execution:
+  orchestrator: "dask"
+  # Slingshot HSN: the front-end network does not carry arbitrary TCP ports
+  # between node classes on Gaea (verified); scheduler/workers use hsn0.
+  dask_interface: "hsn0"
+  allocation:
+    nodes: 1
+    ntasks_per_node: 4          # 1 scheduler + 1 client + 2 workers
+    cpus_per_task: 8
+    # memory omitted: Gaea c6 SLURM does not configure consumable memory
+    # (RealMemory=1); --mem requests are rejected there. Set it on sites
+    # where memory is a schedulable resource.
+    walltime: "02:00:00"
+    account: "bil-fire3"        # adjust to your RDHPCS project
+    partition: "batch"
+    slurm_cluster: "c6"         # -> #SBATCH -M c6
+    python: "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/bin/python"
+    prologue:
+      - "cd /gpfs/f6/bil-fire3/scratch/Barry.Baker/python/mdt"
+  clusters:
+    compute:
+      mode: "allocation"

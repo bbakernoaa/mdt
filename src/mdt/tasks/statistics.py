@@ -29,6 +29,12 @@ def compute_statistics(
     for each region by filtering the input data and substituting ``{region}``
     in the savename. Spaces in region names are replaced with underscores.
 
+    When the input carries a model dimension, metrics are computed per model.
+    Without regions, a specified ``savename`` receives one combined table with
+    a column per model (labeled by the model coordinate values) instead of
+    separate per-model files. With regions, per-model savename suffixes are
+    kept so region placeholders remain distinct.
+
     Parameters
     ----------
     name : str
@@ -72,15 +78,23 @@ def compute_statistics(
     model_dim = kwargs.pop("model_dim", input_data.attrs.get("mdt_model_dim", "model") if isinstance(input_data, xr.Dataset) else "model")
     if isinstance(input_data, xr.Dataset) and model_dim in input_data.dims:
         results = {}
+        savename = kwargs.get("savename")
         for model in input_data[model_dim].values.tolist():
             model_kwargs = dict(kwargs)
-            if model_kwargs.get("savename"):
-                path = Path(model_kwargs["savename"])
-                model_kwargs["savename"] = str(path.with_name(f"{path.stem}_{model}{path.suffix}"))
+            if regions:
+                # Per-region files need distinct names: keep the per-model suffix.
+                if model_kwargs.get("savename"):
+                    path = Path(model_kwargs["savename"])
+                    model_kwargs["savename"] = str(path.with_name(f"{path.stem}_{model}{path.suffix}"))
+            else:
+                # All models share one output file with per-model columns.
+                model_kwargs.pop("savename", None)
             model_data = input_data.sel({model_dim: model})
             results[str(model)] = compute_statistics(
                 name=f"{name}_{model}", metrics=metrics, input_data=model_data, kwargs={**model_kwargs, **({"regions": regions} if regions else {})}
             )
+        if savename and not regions:
+            _save_combined_statistics(name, results, savename)
         return results
 
     if regions:
@@ -347,6 +361,64 @@ def _execute_metric(
     raise TypeError(f"Statistics require xarray input, got {type(data).__name__}.")
 
 
+def _scalar_rows(results: Dict[str, Any]) -> Dict[str, Any]:
+    """Reduce each metric result to a single scalar value for tabular output."""
+    import numpy as np
+
+    rows = {}
+    for metric, value in results.items():
+        if isinstance(value, xr.Dataset):
+            value = value.to_array().mean(skipna=True)
+        if isinstance(value, xr.DataArray):
+            v = value.mean(skipna=True).compute().item()
+        elif hasattr(value, "item") and getattr(value, "ndim", 0) == 0:
+            v = value.item()
+        elif hasattr(value, "item"):
+            v = np.asarray(value).mean().item()
+        elif isinstance(value, np.ndarray):
+            v = value.mean().item()
+        else:
+            v = value
+        rows[metric] = v
+    return rows
+
+
+def _save_combined_statistics(name: str, results: Dict[str, Dict[str, Any]], savename: str) -> None:
+    """Save multi-model statistics as one table with a column per model.
+
+    Parameters
+    ----------
+    name : str
+        The statistics task name.
+    results : dict
+        Mapping of model labels to their per-metric results dictionaries.
+    savename : str
+        Output file path. Extension determines format (.csv, .json, else
+        Markdown). Metrics are rows; each model label becomes a column.
+    """
+    rows = {model: _scalar_rows(model_results) for model, model_results in results.items()}
+    df = pd.DataFrame(rows)
+    df.index.name = "Metric"
+
+    if savename.endswith(".csv"):
+        df.to_csv(savename)
+        logger.info("Saved combined statistics to %s (CSV, %d models)", savename, len(rows))
+    elif savename.endswith(".json"):
+        df.to_json(savename, indent=2)
+        logger.info("Saved combined statistics to %s (JSON, %d models)", savename, len(rows))
+    else:
+        md = f"# Statistics: {name}\n\n"
+        models = list(rows)
+        md += "| Metric | " + " | ".join(models) + " |\n"
+        md += "|--------|" + "|".join(["-------"] * len(models)) + "|\n"
+        for metric in df.index:
+            cells = " | ".join(f"{df.loc[metric, model]:.4f}" for model in models)
+            md += f"| {metric} | {cells} |\n"
+        with Path(savename).open("w") as f:
+            f.write(md)
+        logger.info("Saved combined statistics to %s (Markdown, %d models)", savename, len(rows))
+
+
 def _save_statistics(name: str, results: Dict[str, Any], savename: str) -> None:
     """Save computed statistics to a file (CSV or Markdown).
 
@@ -363,24 +435,7 @@ def _save_statistics(name: str, results: Dict[str, Any], savename: str) -> None:
         - .json → JSON file
         - anything else → Markdown table
     """
-    import numpy as np
-
-    # Extract scalar values from results
-    rows = {}
-    for metric, value in results.items():
-        if isinstance(value, xr.Dataset):
-            value = value.to_array().mean(skipna=True)
-        if isinstance(value, xr.DataArray):
-            v = value.mean(skipna=True).compute().item()
-        elif hasattr(value, "item") and getattr(value, "ndim", 0) == 0:
-            v = value.item()
-        elif hasattr(value, "item"):
-            v = np.asarray(value).mean().item()
-        elif isinstance(value, np.ndarray):
-            v = value.mean().item()
-        else:
-            v = value
-        rows[metric] = v
+    rows = _scalar_rows(results)
 
     df = pd.DataFrame([rows], index=[name])
 

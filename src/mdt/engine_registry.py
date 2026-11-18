@@ -102,6 +102,17 @@ def _register_prefect() -> Type[Engine]:
 EngineRegistry.register("prefect", _register_prefect)
 
 
+def _register_dask() -> Type[Engine]:
+    try:
+        from mdt.dask_engine import DaskEngine
+    except ImportError as e:
+        raise ImportError("Dask distributed is not installed. Install with: pip install mdt[dask]") from e
+    return DaskEngine
+
+
+EngineRegistry.register("dask", _register_dask)
+
+
 def _register_ecflow() -> Type[Engine]:
     try:
         from mdt.ecflow_engine import EcFlowEngine

@@ -72,3 +72,65 @@ pairing:
 ```
 
 If no `cluster` is specified for a task, it uses the `default_cluster` defined in the `execution` section.
+
+## Gaea C6 Data Transfer Nodes (DTNs)
+
+See `docs/examples/gefs_aeronet_gaea_dtn.yaml` for a complete working example. Key platform specifics:
+
+- DTNs are reached through the SLURM federation cluster `es`, partition `dtn_f5_f6`, QoS `dtn`. Use `job_extra_directives: ["-M es", "--qos=dtn", "--constraint=f6"]` to land on the DTNs with `/gpfs/f6` mounted.
+- The `dtn` QoS allows at most **4 CPUs per job** (`MaxTRESPerJob`) and 50 CPUs per user (`MaxTRESPU`). Larger jobs pend forever with `QOSMaxCpuPerJobLimit` and deadlock the workflow. Scale by submitting more small worker jobs (`workers: N` with `cores: 4`), not bigger ones.
+- Set `execution.dask_interface: "hsn0"` so the scheduler advertises the Slingshot HSN address. The default front-end network (`fen`) does not carry arbitrary TCP ports between login nodes and DTNs, so workers time out connecting to the scheduler without this.
+
+## Two-Stage Workflow: Prep + Fixed Allocation
+
+For NOAA-style fixed compute allocations (a set block of nodes/CPUs, often network-isolated), MDT supports a two-stage path. Complete example: `docs/examples/gefs_aeronet_gaea_prep.yaml`.
+
+### Stage 1 — Prepare data (`mdt prep`)
+
+Run where external data access exists (a DTN or service node):
+
+```bash
+mdt prep docs/examples/gefs_aeronet_gaea_prep.yaml
+```
+
+- Executes only the data-retrieval/preparation stages; pairing, statistics and plots never run here.
+- Persists every dataset to icechunk/zarr stores on shared storage with a completeness manifest (`<store>.mdt-prep.json`).
+- Idempotent: complete stores covering the requested dates are reused (`cached`); `--force` re-retrieves everything.
+- Interrupt-safe: an interrupted store stays `incomplete` and is re-prepared on the next run, never served as a complete cache.
+- Prep runs on local Dask workers at the launch point regardless of the configured compute clusters. On Gaea DTNs, remember the `dtn` QoS 4-CPU-per-job cap when launching prep itself as a batch job.
+
+### Stage 2 — Compute inside a fixed allocation
+
+Generate and submit the allocation script:
+
+```bash
+mdt script docs/examples/gefs_aeronet_gaea_prep.yaml -o run_analysis.slurm
+sbatch run_analysis.slurm
+```
+
+The script requests the resources in `execution.allocation` and runs `srun -n <ntasks> python -m mdt.allocation <config>`. Inside the allocation, dask-jobqueue's **SLURMRunner** bootstraps the whole workload: task 0 = Dask scheduler, task 1 = client (executes the DAG), remaining tasks = workers — coordinated through a `scheduler-<jobid>.json` file on shared storage. **Zero additional batch jobs are submitted**, and all loads are served from the prepared stores; a missing/incomplete store fails fast with a message naming the dataset and pointing back to `mdt prep`.
+
+Interactive smoke test on Gaea C6:
+
+```bash
+salloc -M c6 -p batch -A bil-fire3 -N 1 --ntasks=4 --cpus-per-task=8 -t 00:30:00
+srun -n 4 /gpfs/f6/bil-fire3/world-shared/python/envs/mdt/bin/python \
+     -m mdt.allocation docs/examples/gefs_aeronet_gaea_prep.yaml
+```
+
+Notes:
+- `nodes * ntasks_per_node` must be >= 3 (scheduler + client + at least one worker).
+- Keep `dask_interface: hsn0` on Gaea; the scheduler now runs *inside* the allocation, so login-node reachability is no longer involved.
+- You can also use your own allocation script — `mdt.allocation` only needs the SLURM environment and the config path.
+- The elastic mode (`SLURMCluster` worker jobs, previous section) remains available unchanged for sites that allow per-worker submissions.
+
+## Prefect State on Network File Systems
+
+Prefect's ephemeral server keeps a SQLite database in `PREFECT_HOME` (default `~/.prefect`). On NFS home directories, SQLite WAL locking is unreliable and the database can corrupt (symptoms: `sqlite3.DatabaseError: file is not a database`, repeated `prefect.server.events.triggers` errors, or "Timed out while attempting to connect to ephemeral Prefect API server"). Keep Prefect state on node-local disk:
+
+```bash
+export PREFECT_HOME=/tmp/prefect-mdt-$USER
+mdt run workflow.yaml
+```
+
+If the default database is already corrupted, move `~/.prefect/prefect.db*` aside; Prefect recreates it on the next run.

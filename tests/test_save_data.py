@@ -75,6 +75,66 @@ class TestSaveData(unittest.TestCase):
         with pytest.raises(TypeError):
             save_data(name="test_invalid_type", data="not_a_dataset", backend="zarr", url=url)
 
+    def test_save_zarr_drops_none_grib_metadata_scalar(self):
+        """grib2io attaches scalar object coords like typeOfAerosol=None; save must not fail."""
+        ds = self.ds.assign_coords(typeOfAerosol=np.array(None, dtype=object))
+        ds["typeOfAerosol"].attrs["grib_name"] = "typeOfAerosol"
+        url = os.path.join(self.test_dir, "grib_meta.zarr")
+
+        save_data(name="test_none_scalar", data=ds, backend="zarr", url=url)
+
+        ds_loaded = xr.open_zarr(url)
+        assert "typeOfAerosol" not in ds_loaded.variables
+        xr.testing.assert_equal(self.ds["temperature"], ds_loaded["temperature"])
+        # The caller's dataset must be unchanged.
+        assert "typeOfAerosol" in ds.variables
+
+    def test_save_zarr_converts_none_in_string_and_numeric_object_vars(self):
+        ds = self.ds.copy()
+        ds["site"] = ("site_id", np.array(["A1", None, "B2"], dtype=object))
+        ds["flag"] = ("site_id", np.array([1, None, 3], dtype=object))
+        ds = ds.assign_coords(site_id=[0, 1, 2])
+        url = os.path.join(self.test_dir, "mixed_object.zarr")
+
+        save_data(name="test_mixed_object", data=ds, backend="zarr", url=url)
+
+        ds_loaded = xr.open_zarr(url)
+        assert ds_loaded["site"].values.tolist() == ["A1", "", "B2"]
+        np.testing.assert_allclose(ds_loaded["flag"].values, [1.0, np.nan, 3.0])
+
+    def test_save_zarr_dataarray_with_none_metadata_coord(self):
+        da = self.ds["temperature"].assign_coords(typeOfAerosol=np.array(None, dtype=object))
+        url = os.path.join(self.test_dir, "da_meta.zarr")
+
+        save_data(name="test_da_none_scalar", data=da, backend="zarr", url=url)
+
+        ds_loaded = xr.open_zarr(url)
+        assert "typeOfAerosol" not in ds_loaded.variables
+
+    def test_save_zarr_unsupported_object_values_raise(self):
+        ds = self.ds.assign_coords(bad=np.array({"a": 1}, dtype=object))
+        url = os.path.join(self.test_dir, "bad_object.zarr")
+
+        with pytest.raises(ValueError, match="Cannot serialize variable 'bad'"):
+            save_data(name="test_bad_object", data=ds, backend="zarr", url=url)
+
+    def test_save_zarr_unwraps_grib2metadata_objects(self):
+        """grib2io's backend stores Grib2Metadata objects in coords like typeOfAerosol."""
+        pytest.importorskip("grib2io")
+        from grib2io.templates import Grib2Metadata
+
+        meta = Grib2Metadata(0)
+        ds = self.ds.assign_coords(typeOfAerosol=np.array(meta, dtype=object))
+        url = os.path.join(self.test_dir, "grib2meta.zarr")
+
+        save_data(name="test_grib2meta", data=ds, backend="zarr", url=url)
+
+        ds_loaded = xr.open_zarr(url)
+        assert int(ds_loaded["typeOfAerosol"].values) == 0
+        assert ds_loaded["typeOfAerosol"].dtype != object
+        # Caller's dataset unchanged.
+        assert isinstance(ds["typeOfAerosol"].values.item(), Grib2Metadata)
+
 
 if __name__ == "__main__":
     unittest.main()

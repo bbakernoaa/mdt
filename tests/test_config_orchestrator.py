@@ -262,3 +262,103 @@ def test_config_rejects_invalid_multi_model_sources(tmp_path, sources):
     path.write_text(yaml.safe_dump({"data": {"model": {"type": "gefs"}}, "pairing": {"eval": {"sources": sources, "target": "obs"}}}))
     with pytest.raises(ValueError, match="sources must be a non-empty list"):
         ConfigParser(path)
+
+
+# --- Feature 001-prep-fixed-allocation: allocation mode + prep section (T006) ---
+
+
+def test_allocation_mode_valid(_write_yaml):
+    path = _write_yaml("""\
+        data:
+          model: {type: gefs}
+        execution:
+          orchestrator: dask
+          allocation:
+            nodes: 1
+            ntasks_per_node: 4
+            cpus_per_task: 8
+            memory: 200GB
+            walltime: "02:00:00"
+            account: bil-fire3
+            partition: batch
+            slurm_cluster: c6
+            interface: hsn0
+            prologue: ["cd /repo"]
+          clusters:
+            compute: {mode: allocation}
+        prep:
+          store_dir: ./zarr_stores
+          summary_file: prep_summary.json
+    """)
+    cfg = ConfigParser(path)
+    assert cfg.execution["allocation"]["nodes"] == 1
+    assert cfg.config["prep"]["store_dir"] == "./zarr_stores"
+
+
+def test_allocation_with_local_cluster_allowed(_write_yaml):
+    path = _write_yaml("""\
+        data:
+          model: {type: gefs}
+        execution:
+          orchestrator: dask
+          clusters:
+            compute: {mode: allocation}
+            service: {mode: local}
+    """)
+    ConfigParser(path)  # must not raise
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        # world size < 3
+        (
+            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n  allocation: {nodes: 1, ntasks_per_node: 2}\n  clusters:\n    c: {mode: allocation}",
+            r"nodes\*ntasks_per_node must be >= 3",
+        ),
+        # mixed elastic + allocation
+        (
+            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n  clusters:\n    c: {mode: allocation}\n    d: {mode: gaea}",
+            "cannot be mixed with elastic cluster modes",
+        ),
+        # wrong orchestrator
+        (
+            "data:\n  m: {type: gefs}\nexecution:\n  clusters:\n    c: {mode: allocation}",
+            "must be 'dask' when any cluster uses mode 'allocation'",
+        ),
+        # bad allocation key type
+        (
+            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n  allocation: {nodes: 0}\n  clusters:\n    c: {mode: allocation}",
+            "execution.allocation.nodes must be a positive integer",
+        ),
+        # unknown allocation key
+        (
+            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n  allocation: {bogus: 1}\n  clusters:\n    c: {mode: allocation}",
+            "unknown execution.allocation keys",
+        ),
+        # bad prologue
+        (
+            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n  allocation: {prologue: notalist}\n  clusters:\n    c: {mode: allocation}",
+            "prologue must be a list",
+        ),
+        # bad prep key
+        (
+            "data:\n  m: {type: gefs}\nprep: {store_dir: ''}",
+            "prep.store_dir must be a non-empty path string",
+        ),
+        # unknown prep key
+        (
+            "data:\n  m: {type: gefs}\nprep: {bogus: 1}",
+            "unknown prep keys",
+        ),
+        # prep section wrong type
+        (
+            "data:\n  m: {type: gefs}\nprep: []",
+            "'prep' section must be a dictionary",
+        ),
+    ],
+)
+def test_allocation_and_prep_validation_errors(_write_yaml, body, message):
+    path = _write_yaml(body)
+    with pytest.raises(ValueError, match=message):
+        ConfigParser(path)

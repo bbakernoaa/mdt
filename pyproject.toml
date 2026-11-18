@@ -17,10 +17,10 @@ dependencies = [
     "xarray",
     "pandas",
     "numpy",
-    "monetio @ git+https://github.com/bbakernoaa/monetio.git@547c89b6e5896a3598f7afc0a2ebb2b449e1280a",
-    "monet @ git+https://github.com/bbakernoaa/monet.git@0529c0793e4599259d8717f597accec5ec202c21",
-    "monet-stats @ git+https://github.com/noaa-oar-arl/monet-stats.git@a68a259df08dd9a770983e7754caa39f2797bf60",
-    "monet-plots @ git+https://github.com/bbakernoaa/monet-plots.git@d116a63fbe61cf2856b955bf527701629fe26d15",
+    #"monetio @ git+https://github.com/bbakernoaa/monetio.git@547c89b6e5896a3598f7afc0a2ebb2b449e1280a",
+    #"monet @ git+https://github.com/bbakernoaa/monet.git@0529c0793e4599259d8717f597accec5ec202c21",
+    #"monet-stats @ git+https://github.com/noaa-oar-arl/monet-stats.git@a68a259df08dd9a770983e7754caa39f2797bf60",
+    #"monet-plots @ git+https://github.com/bbakernoaa/monet-plots.git@d116a63fbe61cf2856b955bf527701629fe26d15",
 ]
 
 [project.scripts]

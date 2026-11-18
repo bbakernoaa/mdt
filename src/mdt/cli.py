@@ -36,10 +36,29 @@ def main() -> None:
     run_parser.add_argument("config_path", type=str, help="Path to the YAML configuration file.")
     run_parser.add_argument(
         "--orchestrator",
-        choices=["prefect", "ecflow"],
+        choices=["prefect", "dask", "ecflow"],
         default=None,
         help="Override the orchestrator backend specified in the YAML configuration.",
     )
+
+    # The 'prep' command (feature 001-prep-fixed-allocation): retrieve/prepare
+    # datasets to local icechunk/zarr stores; never runs analysis stages.
+    prep_parser = subparsers.add_parser("prep", help="Prepare (retrieve/cache) all datasets to local stores without running analysis.")
+    prep_parser.add_argument("config_path", type=str, help="Path to the YAML configuration file.")
+    prep_parser.add_argument(
+        "--orchestrator",
+        choices=["dask", "prefect"],
+        default=None,
+        help="Override the orchestrator backend (prep defaults to the plain-Dask engine).",
+    )
+    prep_parser.add_argument("--force", action="store_true", help="Ignore cached stores and re-retrieve all datasets.")
+
+    # The 'script' command (feature 001-prep-fixed-allocation): generate a
+    # SLURM allocation script for the compute stage; never submits it.
+    script_parser = subparsers.add_parser("script", help="Generate a SLURM allocation script for the workflow's compute stage.")
+    script_parser.add_argument("config_path", type=str, help="Path to the YAML configuration file.")
+    script_parser.add_argument("--output", "-o", type=str, default="mdt_allocation.slurm", help="Output script path.")
+    script_parser.add_argument("--stage", choices=["compute"], default="compute", help="Workflow stage to run in the allocation.")
 
     # The 'validate' command
     validate_parser = subparsers.add_parser("validate", help="Validate a YAML configuration file.")
@@ -92,6 +111,60 @@ def main() -> None:
                 except Exception as cleanup_error:
                     logger.warning("Failed to cleanly close execution engine: %s", cleanup_error)
 
+    elif args.command == "prep":
+        try:
+            from mdt.prep import run_prep
+
+            logger.info(f"Loading configuration from {args.config_path}")
+            config = load_config(args.config_path)
+            logger.info("Preparing datasets (retrieval only; analysis stages are not executed)")
+            results = run_prep(config, force=args.force)
+
+            counts = {"retrieved": 0, "cached": 0, "failed": 0}
+            for result in results:
+                counts[result["status"]] += 1
+                line = f"{result['dataset']}: {result['status']} -> {result['store_path']}"
+                if result.get("error"):
+                    line += f" ({result['error']})"
+                if result.get("warning"):
+                    line += f" [warning: {result['warning']}]"
+                print(line)
+            print(f"PREP SUMMARY: {counts['retrieved']} retrieved, {counts['cached']} cached, {counts['failed']} failed")
+
+            summary_file = (config.config.get("prep") or {}).get("summary_file")
+            if summary_file:
+                import json
+
+                Path(summary_file).write_text(json.dumps(results, indent=2))
+                logger.info("Wrote prep summary to %s", summary_file)
+
+            if counts["failed"]:
+                sys.exit(1)
+        except SystemExit:
+            raise
+        except Exception as e:
+            if args.debug:
+                logger.exception("Error preparing datasets")
+            else:
+                logger.error(f"Error preparing datasets: {e}")
+            sys.exit(1)
+
+    elif args.command == "script":
+        try:
+            from mdt.scriptgen import render_allocation_script
+
+            config = load_config(args.config_path)
+            script = render_allocation_script(config, args.config_path)
+            Path(args.output).write_text(script)
+            print(f"Wrote allocation script to {args.output}")
+            print(f"Submit with: sbatch {args.output}")
+        except Exception as e:
+            if args.debug:
+                logger.exception("Error generating allocation script")
+            else:
+                logger.error(f"Error generating allocation script: {e}")
+            sys.exit(1)
+
     elif args.command == "validate":
         try:
             logger.info(f"Validating configuration: {args.config_path}")
@@ -128,6 +201,29 @@ def main() -> None:
         try:
             with Path(args.output).open("w") as f:
                 yaml.safe_dump(template, f, sort_keys=False)
+                f.write(
+                    "\n# --- Optional: two-stage prep + fixed-allocation execution ---\n"
+                    "# Stage 1 (where data access exists, e.g. a DTN):  mdt prep this_file.yaml\n"
+                    "# Stage 2 (inside a fixed SLURM allocation):\n"
+                    "#   mdt script this_file.yaml -o run.slurm && sbatch run.slurm\n"
+                    "# prep:\n"
+                    "#   store_dir: ./zarr_stores\n"
+                    "#   summary_file: prep_summary.json\n"
+                    "# execution:\n"
+                    "#   orchestrator: dask\n"
+                    "#   dask_interface: hsn0        # Gaea: Slingshot HSN\n"
+                    "#   allocation:\n"
+                    "#     nodes: 1\n"
+                    "#     ntasks_per_node: 4        # 1 scheduler + 1 client + 2 workers\n"
+                    "#     cpus_per_task: 8\n"
+                    "#     memory: 200GB\n"
+                    "#     walltime: '02:00:00'\n"
+                    "#     account: my-project\n"
+                    "#     partition: batch\n"
+                    "#     slurm_cluster: c6\n"
+                    "#   clusters:\n"
+                    "#     compute: {mode: allocation}\n"
+                )
             print(f"Generated template configuration: {args.output}")
         except Exception as e:
             logger.error(f"Failed to generate template: {e}")
