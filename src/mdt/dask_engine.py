@@ -75,6 +75,7 @@ def _task_call(node_data: Dict[str, Any], predecessors: list, outputs: Dict[str,
     """
     task_type = node_data["task_type"]
     input_node = predecessors[0] if predecessors else None
+    input_future = outputs.get(input_node) if input_node is not None else None
 
     if task_type == "load_data":
         return load_data, {"name": node_data["name"], "dataset_type": node_data["dataset_type"], "kwargs": node_data["kwargs"]}
@@ -119,7 +120,7 @@ def _task_call(node_data: Dict[str, Any], predecessors: list, outputs: Dict[str,
         return compute_statistics, {
             "name": node_data["name"],
             "metrics": node_data["metrics"],
-            "input_data": outputs.get(input_node),
+            "input_data": input_future,
             "kwargs": node_data["kwargs"],
         }
 
@@ -127,14 +128,14 @@ def _task_call(node_data: Dict[str, Any], predecessors: list, outputs: Dict[str,
         return generate_plot, {
             "name": node_data["name"],
             "plot_type": node_data["plot_type"],
-            "input_data": outputs.get(input_node),
+            "input_data": input_future,
             "kwargs": node_data["kwargs"],
         }
 
     if task_type == "calculate_reduction":
         return calculate_reduction, {
             "name": node_data["name"],
-            "data": outputs.get(input_node),
+            "data": input_future,
             "method": node_data["method"],
             "dim": node_data["dim"],
             "force_weighted": node_data["force_weighted"],
@@ -144,7 +145,7 @@ def _task_call(node_data: Dict[str, Any], predecessors: list, outputs: Dict[str,
     if task_type == "save_data":
         return save_data, {
             "name": node_data["name"],
-            "data": outputs.get(input_node),
+            "data": input_future,
             "backend": node_data["backend"],
             "url": node_data["url"],
             "kwargs": node_data["kwargs"],

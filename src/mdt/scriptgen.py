@@ -37,10 +37,7 @@ def render_prep_script(config: "ConfigParser", config_path: str) -> str:
     walltime = prep_cfg.get("walltime", "04:00:00")
     account = prep_cfg.get("account") or allocation.get("account")
     if not account:
-        raise ValueError(
-            "Prep script generation requires an account: set execution.prep_allocation.account "
-            "or execution.allocation.account."
-        )
+        raise ValueError("Prep script generation requires an account: set execution.prep_allocation.account or execution.allocation.account.")
     python = prep_cfg.get("python") or allocation.get("python") or sys.executable
     prologue = list(prep_cfg.get("prologue") or allocation.get("prologue") or [f"cd {Path.cwd()}"])
     force = bool(prep_cfg.get("force", False))
@@ -104,7 +101,7 @@ def render_allocation_script(config: "ConfigParser", config_path: str) -> str:
 
     lines = [
         "#!/bin/bash",
-        f"#SBATCH -J mdt-analysis",
+        "#SBATCH -J mdt-analysis",
         f"#SBATCH -N {nodes}",
         f"#SBATCH --ntasks-per-node={ntasks_per_node}",
         f"#SBATCH --cpus-per-task={cpus_per_task}",

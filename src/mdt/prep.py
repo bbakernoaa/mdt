@@ -4,7 +4,7 @@ Feature 001-prep-fixed-allocation (US1). Implements the PrepManifest entity
 from specs/001-prep-fixed-allocation/data-model.md and the `mdt prep`
 contract from specs/001-prep-fixed-allocation/contracts/cli.md.
 
-Design (research.md R3–R5):
+Design (research.md R3-R5):
 - Prep executes only load nodes (+ derived save nodes) via the plain-Dask
   engine; analysis stages never run here.
 - A per-store JSON manifest is written ``incomplete`` before retrieval and
@@ -85,9 +85,10 @@ class PrepManifest:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
         tmp.write_text(json.dumps(self.to_dict(), indent=2))
-        os.replace(tmp, path)
+        tmp.replace(path)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the manifest as a JSON-serializable dictionary."""
         return {
             "dataset": self.dataset,
             "store_path": self.store_path,
@@ -104,11 +105,13 @@ class PrepManifest:
 
     @classmethod
     def load(cls, path: Path) -> "PrepManifest":
+        """Load a manifest from its JSON file."""
         data = json.loads(Path(path).read_text())
         return cls(**data)
 
     @classmethod
     def load_for_store(cls, store_path: str) -> Optional["PrepManifest"]:
+        """Load the manifest beside a store, or None when absent/unreadable."""
         path = manifest_path_for(store_path)
         if not path.exists():
             return None
@@ -137,8 +140,9 @@ class PrepManifest:
         """
         existing = cls.load_for_store(store_path)
         if existing is not None and existing.status == "incomplete" and existing.writer_is_alive() and not force:
+            writer = existing.writer or {}
             raise RuntimeError(
-                f"Dataset '{dataset}': another prep run (pid={existing.writer['pid']}, host={existing.writer['host']}) "
+                f"Dataset '{dataset}': another prep run (pid={writer.get('pid')}, host={writer.get('host')}) "
                 f"is writing store '{store_path}'. Wait for it to finish or remove its manifest if it is stale."
             )
         manifest = cls(
@@ -267,6 +271,7 @@ def store_for_dataset(config: "ConfigParser", name: str) -> tuple[str, str]:
 
 
 def dataset_fingerprint(config: "ConfigParser", name: str) -> str:
+    """Fingerprint of a configured dataset's reader type and kwargs."""
     details = config.data[name]
     return config_fingerprint(details.get("type", ""), dict(details.get("kwargs") or {}))
 
@@ -378,11 +383,11 @@ def check_caches(config: "ConfigParser", dag: "nx.DiGraph") -> None:
     manifests, and config drift still fail hard.
     """
     problems: List[str] = []
-    for node_id, attrs in dag.nodes(data=True):
+    for _node_id, attrs in dag.nodes(data=True):
         if attrs.get("task_type") != "load_data":
             continue
         name = attrs["name"]
-        store_path, backend = store_for_dataset(config, name)
+        store_path, _backend = store_for_dataset(config, name)
         fingerprint = dataset_fingerprint(config, name)
         requested = requested_dates_for(dict(config.data[name].get("kwargs") or {}))
         manifest = PrepManifest.load_for_store(store_path)

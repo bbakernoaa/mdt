@@ -212,7 +212,6 @@ class PrefectEngine(Engine):
             for node_id in nx.topological_sort(dag):
                 node_data = dag.nodes[node_id]
                 task_type = node_data["task_type"]
-                target_cluster = node_data.get("cluster")
 
                 # Retrieve the inputs from the dependencies that have already run
                 predecessors = list(dag.predecessors(node_id))

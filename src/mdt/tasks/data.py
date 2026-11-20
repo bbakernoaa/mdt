@@ -106,7 +106,7 @@ def _grib_forecast_time_preprocess(ds: xr.Dataset) -> xr.Dataset:
     }
     updates: dict[str, tuple[str, np.ndarray]] = {}
     attrs: dict[str, dict] = {}
-    for coord_name, variable in ds.coords.items():
+    for _coord_name, variable in ds.coords.items():
         canonical = roles.get(variable.attrs.get("standard_name"))
         if canonical is None or variable.ndim != 0 or variable.dtype.kind not in ("M", "m"):
             continue
@@ -322,11 +322,7 @@ def _promote_time_coordinate(loaded_obj: xr.Dataset, name: str, policy: Dict[str
     # axis (built per file before multi-file concatenation). It outranks scalar
     # CF aliases such as a GRIB validDate that concatenation collapsed to the
     # first file's value.
-    indexed_time = (
-        "time" in ds.indexes
-        and ds["time"].dims == ("time",)
-        and ds["time"].dtype.kind == "M"
-    )
+    indexed_time = "time" in ds.indexes and ds["time"].dims == ("time",) and ds["time"].dtype.kind == "M"
     valid_name: Hashable | None = "time" if indexed_time else _time_role(ds, policy.get("valid_time"), "time")
     reference_name = _time_role(ds, policy.get("forecast_reference_time"), "forecast_reference_time", {valid_name} if valid_name else None)
     lead_name = _time_role(ds, policy.get("lead_time"), "forecast_period", {n for n in (valid_name, reference_name) if n})
@@ -1230,7 +1226,7 @@ def save_data(
             data.to_zarr(str(tmp_path), mode="w", **kwargs)
             if target.exists():
                 shutil.rmtree(target)
-            os.replace(tmp_path, target)
+            tmp_path.replace(target)
             logger.info("Successfully saved dataset '%s' to Zarr at '%s'", name, url)
         except Exception as e:
             if tmp_path.exists():

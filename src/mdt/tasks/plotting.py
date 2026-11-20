@@ -78,13 +78,18 @@ def _format_time_range(data: Union[xr.Dataset, xr.DataArray, Dict[str, Any]]) ->
     return f"{t0.strftime(fmt)} to {t1.strftime(fmt)}"
 
 
-def _get_var_pair(plot_kwargs: Dict[str, Any]) -> tuple[str | None, str | None]:
-    """Resolve observation/model variable names from common plotting kwargs."""
+def _get_var_pair(plot_kwargs: Dict[str, Any]) -> tuple[Any, Any]:
+    """Resolve observation/model variable names from common plotting kwargs.
+
+    Values may be a single variable name or a list/tuple of model columns
+    (overlay plots), so the return type is intentionally wide.
+    """
     col1 = plot_kwargs.get("col1") or plot_kwargs.get("var1")
     col2 = plot_kwargs.get("col2") or plot_kwargs.get("var2")
     if col1 is None and plot_kwargs.get("y") is not None:
         col1 = str(plot_kwargs.get("y"))
     return col1, col2
+
 
 # Plot types whose monet-plots classes accept a list of model variables and
 # render every model on one shared axis (overlay comparison).
@@ -94,9 +99,7 @@ _OVERLAY_PLOT_TYPES = frozenset({"scatter", "timeseriesstat", "timeseriesstats",
 _FACET_PLOT_TYPES = frozenset({"spatial_bias_scatter", "spatial", "spatial_contour"})
 
 
-def _pivot_model_columns(
-    data: xr.Dataset, model_dim: str, kwargs: Dict[str, Any]
-) -> tuple[xr.Dataset, Dict[str, Any]] | None:
+def _pivot_model_columns(data: xr.Dataset, model_dim: str, kwargs: Dict[str, Any]) -> tuple[xr.Dataset, Dict[str, Any]] | None:
     """Turn a model-indexed dataset into per-model columns for overlay plots.
 
     The observation variable is shared across models (taken from the first
@@ -185,6 +188,7 @@ def _generate_facet_plot(
     plt.close(fig)
     logger.info("Saved Track A facet plot '%s' (%d models) to %s", name, len(models), savename)
     return fig
+
 
 def _promote_constructor_kwargs(
     plot_type: str, constructor_kwargs: Dict[str, Any], plot_kwargs: Dict[str, Any]

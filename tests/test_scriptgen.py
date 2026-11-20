@@ -12,7 +12,6 @@ import pytest
 from mdt.config import ConfigParser
 from mdt.scriptgen import render_allocation_script
 
-
 SCRIPT_YAML = """\
 data:
   obs:
@@ -45,6 +44,7 @@ def _config(tmp_path, body=SCRIPT_YAML):
 
 
 def test_script_directives_match_contract(tmp_path):
+    """Generated script carries the contract's SBATCH directives and srun line."""
     config, path = _config(tmp_path)
     script = render_allocation_script(config, str(path))
     assert script.startswith("#!/bin/bash")
@@ -66,6 +66,7 @@ def test_script_directives_match_contract(tmp_path):
 
 
 def test_script_optional_directives_absent_when_unset(tmp_path):
+    """Optional directives are omitted when not configured."""
     body = SCRIPT_YAML.replace("    partition: batch\n", "").replace("    qos: normal\n", "").replace("    slurm_cluster: c6\n", "")
     config, path = _config(tmp_path, body)
     script = render_allocation_script(config, str(path))
@@ -75,12 +76,14 @@ def test_script_optional_directives_absent_when_unset(tmp_path):
 
 
 def test_script_deterministic(tmp_path):
+    """Rendering the same config twice yields identical text."""
     config, path = _config(tmp_path)
     assert render_allocation_script(config, str(path)) == render_allocation_script(config, str(path))
 
 
 def test_script_defaults(tmp_path):
-    body = SCRIPT_YAML.replace("    python: /envs/mdt/bin/python\n", "").replace("    prologue: [\"cd /repo\", \"export FOO=1\"]\n", "")
+    """python/prologue fall back to sys.executable and the working directory."""
+    body = SCRIPT_YAML.replace("    python: /envs/mdt/bin/python\n", "").replace('    prologue: ["cd /repo", "export FOO=1"]\n', "")
     config, path = _config(tmp_path, body)
     script = render_allocation_script(config, str(path))
     import sys
@@ -90,6 +93,7 @@ def test_script_defaults(tmp_path):
 
 
 def test_script_missing_allocation_section_errors(tmp_path):
+    """Missing execution.allocation raises with guidance."""
     body = SCRIPT_YAML.split("  allocation:")[0] + "  clusters:\n    compute: {mode: local}\n"
     config, path = _config(tmp_path, body)
     with pytest.raises(ValueError, match="execution.allocation"):
@@ -97,6 +101,7 @@ def test_script_missing_allocation_section_errors(tmp_path):
 
 
 def test_script_missing_required_fields_error(tmp_path):
+    """Missing nodes/account raise naming the fields."""
     body = SCRIPT_YAML.replace("    account: bil-fire3\n", "").replace("    nodes: 2\n", "")
     config, path = _config(tmp_path, body)
     with pytest.raises(ValueError, match="nodes|account"):
@@ -104,6 +109,7 @@ def test_script_missing_required_fields_error(tmp_path):
 
 
 def test_script_cli_writes_file_without_submitting(tmp_path, monkeypatch):
+    """CLI writes the script and never submits it."""
     from mdt.cli import main
 
     _, path = _config(tmp_path)
@@ -119,6 +125,7 @@ def test_script_cli_writes_file_without_submitting(tmp_path, monkeypatch):
 
 
 def test_script_cli_missing_section_exit_1(tmp_path, monkeypatch):
+    """CLI exits 1 when the allocation section is absent."""
     from mdt.cli import main
 
     body = SCRIPT_YAML.split("  allocation:")[0] + "  clusters:\n    compute: {mode: local}\n"
@@ -146,6 +153,7 @@ PREP_SECTION = """\
 
 
 def test_prep_script_directives(tmp_path):
+    """Prep script is a single DTN task with the configured directives."""
     from mdt.scriptgen import render_prep_script
 
     body = SCRIPT_YAML.replace("  allocation:", PREP_SECTION + "  allocation:")
@@ -165,6 +173,7 @@ def test_prep_script_directives(tmp_path):
 
 
 def test_prep_script_defaults_from_allocation(tmp_path):
+    """Prep defaults are DTN-safe and fall back to the allocation account."""
     from mdt.scriptgen import render_prep_script
 
     config, path = _config(tmp_path)  # no prep_allocation section
@@ -175,6 +184,7 @@ def test_prep_script_defaults_from_allocation(tmp_path):
 
 
 def test_prep_script_force_flag(tmp_path):
+    """prep_allocation.force adds --force to the prep command."""
     from mdt.scriptgen import render_prep_script
 
     body = SCRIPT_YAML.replace("  allocation:", "  prep_allocation:\n    force: true\n  allocation:")
@@ -184,6 +194,7 @@ def test_prep_script_force_flag(tmp_path):
 
 
 def test_prep_script_requires_account(tmp_path):
+    """Prep generation without any account raises."""
     from mdt.scriptgen import render_prep_script
 
     body = SCRIPT_YAML.replace("    account: bil-fire3\n", "")
@@ -193,6 +204,7 @@ def test_prep_script_requires_account(tmp_path):
 
 
 def test_prep_script_cli_default_output(tmp_path, monkeypatch):
+    """--stage prep defaults the output to mdt_prep.slurm."""
     from mdt.cli import main
 
     body = SCRIPT_YAML.replace("  allocation:", PREP_SECTION + "  allocation:")

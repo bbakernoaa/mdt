@@ -7,18 +7,15 @@ Scenarios per specs/001-prep-fixed-allocation/quickstart.md §A:
 - SLURMRunner wiring (research.md R1)
 """
 
-import json
 from unittest.mock import MagicMock
 
-import networkx as nx
 import pytest
 
 from mdt.allocation import adapt_layout, detect_allocation
 from mdt.config import ConfigParser
 from mdt.dag import DAGBuilder
 from mdt.dask_runtime import DaskClusterManager
-from mdt.prep import PrepManifest, manifest_path_for
-
+from mdt.prep import PrepManifest
 
 ALLOCATION_YAML = """\
 data:
@@ -64,6 +61,7 @@ SLURM_ENV = {
 
 
 def test_detect_allocation_reads_slurm_env():
+    """SLURM env vars parse into AllocationInfo with n_workers = ntasks - 2."""
     info = detect_allocation(env=SLURM_ENV)
     assert info.job_id == 12345
     assert info.ntasks == 8
@@ -75,6 +73,7 @@ def test_detect_allocation_reads_slurm_env():
 
 @pytest.mark.parametrize("missing", ["SLURM_JOB_ID", "SLURM_NTASKS", "SLURM_PROCID"])
 def test_detect_allocation_missing_env_errors(missing):
+    """Missing required SLURM variables raise an actionable error naming them."""
     env = dict(SLURM_ENV)
     del env[missing]
     with pytest.raises(RuntimeError, match=missing):
@@ -82,12 +81,14 @@ def test_detect_allocation_missing_env_errors(missing):
 
 
 def test_detect_allocation_world_too_small():
+    """Allocations with fewer than 3 tasks fail fast (scheduler + client + worker)."""
     env = dict(SLURM_ENV, SLURM_NTASKS="2")
     with pytest.raises(RuntimeError, match="at least 3"):
         detect_allocation(env=env)
 
 
 def test_adapt_layout_clamps_to_allocation(caplog):
+    """Over-requested workers are clamped to the allocation with a warning."""
     info = detect_allocation(env=dict(SLURM_ENV, SLURM_NTASKS="4"))  # 2 workers available
     layout = adapt_layout(info, requested_workers=8, cpus_per_task=8)
     assert layout["n_workers"] == 2
@@ -96,6 +97,7 @@ def test_adapt_layout_clamps_to_allocation(caplog):
 
 
 def test_adapt_layout_no_clamp_when_fits():
+    """Requests that fit the allocation are honored unchanged."""
     info = detect_allocation(env=SLURM_ENV)  # 6 workers
     layout = adapt_layout(info, requested_workers=4, cpus_per_task=8)
     assert layout["n_workers"] == 4
@@ -152,6 +154,7 @@ def test_allocation_engine_omits_resource_annotations(tmp_path, monkeypatch):
 
 
 def test_allocation_engine_fails_fast_before_submit(tmp_path, monkeypatch):
+    """Missing caches abort before any task submission, naming mdt prep."""
     from mdt.dask_engine import DaskEngine
 
     config = _config(tmp_path)
@@ -176,7 +179,9 @@ def test_allocation_engine_strips_retrieval_kwargs(tmp_path, monkeypatch):
     store.mkdir(parents=True)
     import mdt.prep as prep_mod
 
-    monkeypatch.setattr(prep_mod, "dataset_fingerprint", lambda c, n: prep_mod.config_fingerprint("aeronet", {"files": "dummy_obs", "download": True, "retries": 8}))
+    monkeypatch.setattr(
+        prep_mod, "dataset_fingerprint", lambda c, n: prep_mod.config_fingerprint("aeronet", {"files": "dummy_obs", "download": True, "retries": 8})
+    )
     m = PrepManifest.begin("obs", str(store), "zarr", prep_mod.dataset_fingerprint(config, "obs"), [])
     m.complete(covered_dates=[])
 
@@ -201,6 +206,7 @@ def test_allocation_engine_strips_retrieval_kwargs(tmp_path, monkeypatch):
 
 
 def test_runner_entry_wires_slurmrunner(tmp_path, monkeypatch):
+    """The entry point wires SLURMRunner options and runs the engine on the client rank."""
     import mdt.allocation as alloc
 
     config_path = tmp_path / "wf.yaml"

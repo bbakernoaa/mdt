@@ -71,7 +71,11 @@ def apply_patches(drivers_path: Path) -> None:
         backup.write_text(drivers_path.read_text())
     # Always patch from the pristine backup so re-runs pick up script updates.
     text = backup.read_text()
-    for old, new, label in ((OLD_INIT, NEW_INIT, "local_prefixes init"), (OLD, NEW, "local prefix collection"), (OLD_AUTH, NEW_AUTH, "authorize local prefixes")):
+    for old, new, label in (
+        (OLD_INIT, NEW_INIT, "local_prefixes init"),
+        (OLD, NEW, "local prefix collection"),
+        (OLD_AUTH, NEW_AUTH, "authorize local prefixes"),
+    ):
         if old not in text:
             raise SystemExit(f"ERROR: expected block for '{label}' not found in {drivers_path}; monetio version may differ.")
         text = text.replace(old, new, 1)

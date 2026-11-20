@@ -70,6 +70,7 @@ def _fake_dataset():
 
 
 def test_prep_dag_prunes_analysis(tmp_path):
+    """Prep DAG contains only load nodes and derived saves."""
     config = _write_config(tmp_path, LOCAL_TWO_SOURCES)
     dag = DAGBuilder(config).build_prep_dag()
     types = {attrs["task_type"] for _, attrs in dag.nodes(data=True)}
@@ -81,6 +82,7 @@ def test_prep_dag_prunes_analysis(tmp_path):
 
 
 def test_prep_dag_skips_derived_save_for_local_store_writing_loads(tmp_path):
+    """Local loads with a configured store get no derived save."""
     body = LOCAL_TWO_SOURCES.replace(
         "    kwargs: {files: dummy_model}",
         "    kwargs: {files: dummy_model}\n    zarr_store: {enabled: true, backend: icechunk, icechunk_url: ./store_model}",
@@ -93,7 +95,8 @@ def test_prep_dag_skips_derived_save_for_local_store_writing_loads(tmp_path):
 
 def test_prep_dag_remote_source_materializes_local_zarr(tmp_path):
     """Remote sources download real data to local zarr; virtual-reference
-    ingestion options are stripped so compute never needs the remote source."""
+    ingestion options are stripped so compute never needs the remote source.
+    """
     body = LOCAL_TWO_SOURCES.replace(
         "  model:\n    type: gefs\n    cluster: compute\n    kwargs: {files: dummy_model}",
         "  model:\n    type: gefs\n    cluster: compute\n    kwargs: {start_date: '2025-08-01', end_date: '2025-08-02'}\n"
@@ -103,12 +106,14 @@ def test_prep_dag_remote_source_materializes_local_zarr(tmp_path):
     dag = DAGBuilder(config).build_prep_dag()
     assert dag.nodes["load_model"]["retrieval"] is True
     kwargs = dag.nodes["load_model"]["kwargs"]
-    assert "use_icechunk" not in kwargs and "icechunk_url" not in kwargs
+    assert "use_icechunk" not in kwargs
+    assert "icechunk_url" not in kwargs
     assert "prep_save_model" in dag.nodes
     assert dag.nodes["prep_save_model"]["url"].endswith("model_prep.zarr")
 
 
 def test_prep_dag_respects_prep_store_dir(tmp_path):
+    """Derived save urls honor prep.store_dir."""
     config = _write_config(tmp_path, LOCAL_TWO_SOURCES + "prep:\n  store_dir: ./my_prep\n")
     dag = DAGBuilder(config).build_prep_dag()
     assert dag.nodes["prep_save_obs"]["url"] == "./my_prep/obs_prep.zarr"
@@ -118,6 +123,7 @@ def test_prep_dag_respects_prep_store_dir(tmp_path):
 
 
 def test_manifest_lifecycle(tmp_path):
+    """Manifest transitions incomplete -> complete with provenance."""
     store = tmp_path / "obs.zarr"
     m = PrepManifest.begin(dataset="obs", store_path=str(store), backend="zarr", fingerprint="fp1", requested_dates=["2025-08-01"])
     assert m.status == "incomplete"
@@ -134,6 +140,7 @@ def test_manifest_lifecycle(tmp_path):
 
 
 def test_manifest_complete_requires_coverage(tmp_path):
+    """Completing with missing dates raises and keeps status incomplete."""
     store = tmp_path / "obs.zarr"
     m = PrepManifest.begin(dataset="obs", store_path=str(store), backend="zarr", fingerprint="fp1", requested_dates=["2025-08-01", "2025-08-02"])
     with pytest.raises(ValueError, match="coverage"):
@@ -142,6 +149,7 @@ def test_manifest_complete_requires_coverage(tmp_path):
 
 
 def test_manifest_stale_writer_resumable(tmp_path):
+    """A dead writer's manifest is treated as stale (resumable)."""
     store = tmp_path / "obs.zarr"
     PrepManifest.begin(dataset="obs", store_path=str(store), backend="zarr", fingerprint="fp1", requested_dates=[])
     data = json.loads(manifest_path_for(str(store)).read_text())
@@ -152,6 +160,7 @@ def test_manifest_stale_writer_resumable(tmp_path):
 
 
 def test_manifest_live_writer_conflict(tmp_path):
+    """A second begin against a live writer raises."""
     store = tmp_path / "obs.zarr"
     PrepManifest.begin(dataset="obs", store_path=str(store), backend="zarr", fingerprint="fp1", requested_dates=[])
     with pytest.raises(RuntimeError, match="another prep run"):
@@ -168,7 +177,8 @@ def _patch_load(monkeypatch, fake_load):
 
 def _call_marker(tmp_path):
     """Cross-process call counter: loads run in Dask worker processes, so an
-    in-memory list would stay empty in the test process."""
+    in-memory list would stay empty in the test process.
+    """
     marker_dir = tmp_path / "load_calls"
     marker_dir.mkdir(exist_ok=True)
 
@@ -186,6 +196,7 @@ def _call_marker(tmp_path):
 
 
 def test_run_prep_local_end_to_end_and_idempotent(tmp_path, monkeypatch):
+    """First prep retrieves; rerun is fully cached with zero reader calls."""
     config = _write_config(tmp_path, LOCAL_TWO_SOURCES)
     monkeypatch.chdir(tmp_path)
     record, count, reset = _call_marker(tmp_path)
@@ -215,6 +226,7 @@ def test_run_prep_local_end_to_end_and_idempotent(tmp_path, monkeypatch):
 
 
 def test_run_prep_force_bypasses_cache(tmp_path, monkeypatch):
+    """--force re-retrieves even complete stores."""
     config = _write_config(tmp_path, LOCAL_TWO_SOURCES)
     monkeypatch.chdir(tmp_path)
     record, count, reset = _call_marker(tmp_path)
@@ -232,6 +244,7 @@ def test_run_prep_force_bypasses_cache(tmp_path, monkeypatch):
 
 
 def test_run_prep_failure_reported(tmp_path, monkeypatch):
+    """Per-dataset failures are reported without blocking other datasets."""
     config = _write_config(tmp_path, LOCAL_TWO_SOURCES)
     monkeypatch.chdir(tmp_path)
 
@@ -249,6 +262,7 @@ def test_run_prep_failure_reported(tmp_path, monkeypatch):
 
 
 def test_run_prep_interrupted_store_not_served_complete(tmp_path, monkeypatch):
+    """Incomplete manifests trigger re-prep, never served as cached."""
     config = _write_config(tmp_path, LOCAL_TWO_SOURCES)
     monkeypatch.chdir(tmp_path)
     _patch_load(monkeypatch, lambda *a, **k: _fake_dataset())
@@ -277,6 +291,7 @@ def test_run_prep_interrupted_store_not_served_complete(tmp_path, monkeypatch):
 
 
 def test_check_caches_fails_fast_on_incomplete(tmp_path, monkeypatch):
+    """check_caches rejects incomplete stores naming mdt prep."""
     config = _write_config(tmp_path, LOCAL_TWO_SOURCES)
     monkeypatch.chdir(tmp_path)
     _patch_load(monkeypatch, lambda *a, **k: _fake_dataset())
@@ -294,6 +309,7 @@ def test_check_caches_fails_fast_on_incomplete(tmp_path, monkeypatch):
 
 
 def test_prep_summary_and_exit_code(tmp_path, monkeypatch, capsys):
+    """CLI prints per-dataset lines and the PREP SUMMARY counts."""
     from mdt.cli import main
 
     cfg_file = tmp_path / "wf.yaml"
@@ -308,6 +324,7 @@ def test_prep_summary_and_exit_code(tmp_path, monkeypatch, capsys):
 
 
 def test_prep_cli_exit_1_on_failure(tmp_path, monkeypatch):
+    """CLI exits 1 when any dataset fails."""
     from mdt.cli import main
 
     cfg_file = tmp_path / "wf.yaml"

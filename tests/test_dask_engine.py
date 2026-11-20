@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import networkx as nx
 import pytest
 import xarray as xr
 
@@ -14,10 +13,12 @@ from mdt.engine_registry import EngineRegistry
 
 
 def test_dask_engine_registered():
+    """The dask orchestrator resolves to DaskEngine."""
     assert EngineRegistry.get_engine("dask") is DaskEngine
 
 
 def test_resolve_task_resource_routing():
+    """Retrieval loads route to service; cached loads to cache_cluster; explicit wins."""
     exec_cfg = {"default_cluster": "compute", "cache_cluster": "compute"}
     retrieval = {"task_type": "load_data", "cluster": "service", "retrieval": True}
     cached = {"task_type": "load_data", "cluster": "service", "retrieval": False}
@@ -32,6 +33,7 @@ def test_resolve_task_resource_routing():
 
 
 def test_dag_marks_retrieval_vs_cached_loads(tmp_path):
+    """DAG load nodes carry the retrieval flag from their source kind."""
     config_file = tmp_path / "wf.yaml"
     config_file.write_text(
         """
@@ -56,6 +58,7 @@ data:
 
 
 def test_wait_for_workers_returns_when_resources_present():
+    """wait_for_workers returns once all required resources registered."""
     client = MagicMock()
     client.scheduler_info.return_value = {
         "workers": {
@@ -68,6 +71,7 @@ def test_wait_for_workers_returns_when_resources_present():
 
 
 def test_wait_for_workers_times_on_missing_resource(monkeypatch):
+    """wait_for_workers raises TimeoutError naming the missing resource."""
     monkeypatch.setattr("mdt.dask_engine.time.sleep", lambda s: None)
     client = MagicMock()
     client.scheduler_info.return_value = {"workers": {"w1": {"resources": {"COMPUTE": 1}}}}
@@ -115,6 +119,7 @@ def test_dask_engine_executes_local_dag_without_gather(tmp_path, monkeypatch):
 
 
 def test_dask_engine_reports_task_failure(tmp_path, monkeypatch):
+    """A failing task surfaces as RuntimeError with the task's error."""
     pytest.importorskip("distributed")
     dag, config = _local_dag(tmp_path)
 

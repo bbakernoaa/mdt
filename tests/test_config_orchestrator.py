@@ -268,6 +268,7 @@ def test_config_rejects_invalid_multi_model_sources(tmp_path, sources):
 
 
 def test_allocation_mode_valid(_write_yaml):
+    """A well-formed allocation + prep configuration parses."""
     path = _write_yaml("""\
         data:
           model: {type: gefs}
@@ -296,6 +297,7 @@ def test_allocation_mode_valid(_write_yaml):
 
 
 def test_allocation_with_local_cluster_allowed(_write_yaml):
+    """Allocation mode may coexist with local clusters."""
     path = _write_yaml("""\
         data:
           model: {type: gefs}
@@ -313,7 +315,8 @@ def test_allocation_with_local_cluster_allowed(_write_yaml):
     [
         # world size < 3
         (
-            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n  allocation: {nodes: 1, ntasks_per_node: 2}\n  clusters:\n    c: {mode: allocation}",
+            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n"
+            "  allocation: {nodes: 1, ntasks_per_node: 2}\n  clusters:\n    c: {mode: allocation}",
             r"nodes\*ntasks_per_node must be >= 3",
         ),
         # mixed elastic + allocation
@@ -338,7 +341,8 @@ def test_allocation_with_local_cluster_allowed(_write_yaml):
         ),
         # bad prologue
         (
-            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n  allocation: {prologue: notalist}\n  clusters:\n    c: {mode: allocation}",
+            "data:\n  m: {type: gefs}\nexecution:\n  orchestrator: dask\n"
+            "  allocation: {prologue: notalist}\n  clusters:\n    c: {mode: allocation}",
             "prologue must be a list",
         ),
         # bad prep key
@@ -359,6 +363,7 @@ def test_allocation_with_local_cluster_allowed(_write_yaml):
     ],
 )
 def test_allocation_and_prep_validation_errors(_write_yaml, body, message):
+    """Malformed allocation/prep keys raise ValueError naming the key."""
     path = _write_yaml(body)
     with pytest.raises(ValueError, match=message):
         ConfigParser(path)

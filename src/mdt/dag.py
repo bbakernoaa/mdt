@@ -204,7 +204,8 @@ class DAGBuilder:
             for t in values:
                 try:
                     store_dates.add(pd.to_datetime(t).date())
-                except Exception:
+                except Exception as e:
+                    logger.debug("Skipping unparseable store time value %r: %s", t, e)
                     continue
             return bool(store_dates) and requested_dates <= store_dates
         except Exception:
@@ -212,8 +213,8 @@ class DAGBuilder:
         finally:
             try:
                 ds.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Ignored error closing cache pre-check dataset: %s", e)
 
     def build_prep_dag(self) -> nx.DiGraph:
         """Build the prep-stage graph: load nodes + derived store-save nodes only.
@@ -231,13 +232,13 @@ class DAGBuilder:
         appear in this graph.
         """
         full = self.build()
-        prep = nx.DiGraph()
+        prep: nx.DiGraph = nx.DiGraph()
         store_dir = (self.config.config.get("prep") or {}).get("store_dir", "./zarr_stores")
         for node_id, attrs in full.nodes(data=True):
             if attrs.get("task_type") != "load_data":
                 continue
             attrs = dict(attrs)
-            zarr_store = (self.config.data[attrs["name"]].get("zarr_store") or {})
+            zarr_store = self.config.data[attrs["name"]].get("zarr_store") or {}
             if attrs.get("retrieval", True):
                 # Remote data: strip virtual-reference ingestion so the load
                 # downloads actual data, then materialize it to local zarr.

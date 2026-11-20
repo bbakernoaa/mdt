@@ -19,6 +19,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from dask.distributed import Client
@@ -152,7 +153,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         scheduler_file = getattr(runner, "scheduler_file", None)
         if isinstance(scheduler_file, (str, os.PathLike)):
             try:
-                os.remove(scheduler_file)
+                Path(scheduler_file).unlink()
             except OSError:
                 pass
     if exit_code:

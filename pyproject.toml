@@ -161,6 +161,7 @@ module = [
     "yaml.*",
     "dask.*",
     "dask_jobqueue.*",
+    "distributed.*",
     "prefect.*",
     "prefect_dask.*",
     "ecflow.*",
@@ -168,6 +169,7 @@ module = [
     "icechunk.*",
     "pandas.*",
     "matplotlib.*",
+    "cartopy.*",
 ]
 ignore_missing_imports = true
 

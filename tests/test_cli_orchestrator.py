@@ -192,9 +192,7 @@ class TestCLIOrchestratorSelection:
         distributed = pytest.importorskip("dask.distributed")
         from mdt.engine import PrefectEngine
 
-        scheduler = MagicMock(
-            scheduler_address="tcp://127.0.0.1:8786", new_spec={"cls": object, "options": {}}, worker_spec={}
-        )
+        scheduler = MagicMock(scheduler_address="tcp://127.0.0.1:8786", new_spec={"cls": object, "options": {}}, worker_spec={})
         monkeypatch.setattr(distributed, "LocalCluster", MagicMock(return_value=scheduler))
         cfg = MagicMock(
             execution={

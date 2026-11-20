@@ -11,7 +11,6 @@ import logging
 import re
 import subprocess
 from typing import TYPE_CHECKING, Any, Dict, List
-from urllib.parse import urlparse
 
 from mdt.hpc import HPCProfileFactory
 

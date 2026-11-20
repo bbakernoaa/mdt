@@ -92,9 +92,7 @@ class ConfigParser:
             )
         cache_cluster = execution_cfg.get("cache_cluster")
         if cache_cluster is not None and cache_cluster not in clusters:
-            raise ValueError(
-                f"Configuration validation failed: execution.cache_cluster '{cache_cluster}' is not defined in execution.clusters."
-            )
+            raise ValueError(f"Configuration validation failed: execution.cache_cluster '{cache_cluster}' is not defined in execution.clusters.")
         orchestrator = execution_cfg.get("orchestrator", "prefect")
         if orchestrator not in {"prefect", "dask", "ecflow"}:
             raise ValueError(
@@ -289,7 +287,9 @@ class ConfigParser:
         for key in str_keys:
             if key in allocation_cfg and allocation_cfg[key] is not None:
                 if not isinstance(allocation_cfg[key], str) or not allocation_cfg[key]:
-                    raise ValueError(f"Configuration validation failed: execution.allocation.{key} must be a non-empty string, got {allocation_cfg[key]!r}.")
+                    raise ValueError(
+                        f"Configuration validation failed: execution.allocation.{key} must be a non-empty string, got {allocation_cfg[key]!r}."
+                    )
         if "prologue" in allocation_cfg:
             prologue = allocation_cfg["prologue"]
             if not isinstance(prologue, list) or any(not isinstance(line, str) for line in prologue):
@@ -319,7 +319,9 @@ class ConfigParser:
         for key in str_keys:
             if key in prep_cfg and prep_cfg[key] is not None:
                 if not isinstance(prep_cfg[key], str) or not prep_cfg[key]:
-                    raise ValueError(f"Configuration validation failed: execution.prep_allocation.{key} must be a non-empty string, got {prep_cfg[key]!r}.")
+                    raise ValueError(
+                        f"Configuration validation failed: execution.prep_allocation.{key} must be a non-empty string, got {prep_cfg[key]!r}."
+                    )
         if "force" in prep_cfg and not isinstance(prep_cfg["force"], bool):
             raise ValueError("Configuration validation failed: execution.prep_allocation.force must be a boolean.")
         for key in ("prologue", "extra_directives"):
