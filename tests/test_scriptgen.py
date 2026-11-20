@@ -127,3 +127,77 @@ def test_script_cli_missing_section_exit_1(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         main()
     assert exc.value.code == 1
+
+
+# --- Prep-stage script (--stage prep) ---
+
+PREP_SECTION = """\
+  prep_allocation:
+    cpus: 4
+    walltime: "04:00:00"
+    account: bil-fire3
+    partition: dtn_f5_f6
+    qos: dtn
+    slurm_cluster: es
+    extra_directives: ["--constraint=f6"]
+    python: /envs/mdt/bin/python
+    prologue: ["cd /repo"]
+"""
+
+
+def test_prep_script_directives(tmp_path):
+    from mdt.scriptgen import render_prep_script
+
+    body = SCRIPT_YAML.replace("  allocation:", PREP_SECTION + "  allocation:")
+    config, path = _config(tmp_path, body)
+    script = render_prep_script(config, str(path))
+    assert script.startswith("#!/bin/bash")
+    assert "#SBATCH -J mdt-prep" in script
+    assert "#SBATCH -N 1" in script
+    assert "#SBATCH -n 1" in script
+    assert "#SBATCH --cpus-per-task=4" in script
+    assert "#SBATCH -p dtn_f5_f6" in script
+    assert "#SBATCH --qos=dtn" in script
+    assert "#SBATCH -M es" in script
+    assert "#SBATCH --constraint=f6" in script
+    assert "srun" not in script  # prep is a single task, no runner bootstrap
+    assert f"/envs/mdt/bin/python -m mdt prep {path.resolve()}" in script
+
+
+def test_prep_script_defaults_from_allocation(tmp_path):
+    from mdt.scriptgen import render_prep_script
+
+    config, path = _config(tmp_path)  # no prep_allocation section
+    script = render_prep_script(config, str(path))
+    assert "#SBATCH --cpus-per-task=4" in script  # DTN-safe default
+    assert "#SBATCH -A bil-fire3" in script  # falls back to allocation.account
+    assert "-m mdt prep" in script
+
+
+def test_prep_script_force_flag(tmp_path):
+    from mdt.scriptgen import render_prep_script
+
+    body = SCRIPT_YAML.replace("  allocation:", "  prep_allocation:\n    force: true\n  allocation:")
+    config, path = _config(tmp_path, body)
+    script = render_prep_script(config, str(path))
+    assert f"-m mdt prep {path.resolve()} --force" in script
+
+
+def test_prep_script_requires_account(tmp_path):
+    from mdt.scriptgen import render_prep_script
+
+    body = SCRIPT_YAML.replace("    account: bil-fire3\n", "")
+    config, path = _config(tmp_path, body)
+    with pytest.raises(ValueError, match="account"):
+        render_prep_script(config, str(path))
+
+
+def test_prep_script_cli_default_output(tmp_path, monkeypatch):
+    from mdt.cli import main
+
+    body = SCRIPT_YAML.replace("  allocation:", PREP_SECTION + "  allocation:")
+    _, path = _config(tmp_path, body)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["mdt", "script", str(path), "--stage", "prep"])
+    main()
+    assert (tmp_path / "mdt_prep.slurm").exists()

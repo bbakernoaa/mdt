@@ -176,3 +176,13 @@ specs/
 
 # ecflow
 ecflow_tasks/
+
+# SLURM job outputs and generated batch scripts
+slurm-*.out
+*_slurm.out
+mdt_prep.slurm
+mdt_compute.slurm
+run_prep.slurm
+run_analysis.slurm
+prep_summary.json
+core

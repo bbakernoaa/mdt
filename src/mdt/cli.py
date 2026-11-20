@@ -57,8 +57,8 @@ def main() -> None:
     # SLURM allocation script for the compute stage; never submits it.
     script_parser = subparsers.add_parser("script", help="Generate a SLURM allocation script for the workflow's compute stage.")
     script_parser.add_argument("config_path", type=str, help="Path to the YAML configuration file.")
-    script_parser.add_argument("--output", "-o", type=str, default="mdt_allocation.slurm", help="Output script path.")
-    script_parser.add_argument("--stage", choices=["compute"], default="compute", help="Workflow stage to run in the allocation.")
+    script_parser.add_argument("--output", "-o", type=str, default=None, help="Output script path (default: mdt_<stage>.slurm).")
+    script_parser.add_argument("--stage", choices=["prep", "compute"], default="compute", help="Workflow stage the script runs.")
 
     # The 'validate' command
     validate_parser = subparsers.add_parser("validate", help="Validate a YAML configuration file.")
@@ -151,13 +151,17 @@ def main() -> None:
 
     elif args.command == "script":
         try:
-            from mdt.scriptgen import render_allocation_script
+            from mdt.scriptgen import render_allocation_script, render_prep_script
 
             config = load_config(args.config_path)
-            script = render_allocation_script(config, args.config_path)
-            Path(args.output).write_text(script)
-            print(f"Wrote allocation script to {args.output}")
-            print(f"Submit with: sbatch {args.output}")
+            output = args.output or f"mdt_{args.stage}.slurm"
+            if args.stage == "prep":
+                script = render_prep_script(config, args.config_path)
+            else:
+                script = render_allocation_script(config, args.config_path)
+            Path(output).write_text(script)
+            print(f"Wrote {args.stage} script to {output}")
+            print(f"Submit with: sbatch {output}")
         except Exception as e:
             if args.debug:
                 logger.exception("Error generating allocation script")

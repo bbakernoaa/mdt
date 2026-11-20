@@ -757,7 +757,11 @@ def load_data(
                             store=s3_conf,
                         )
                         config.set_virtual_chunk_container(container)
-                    authorize = {prefix: None for prefix in prefixes}
+                    # Keep saved containers (e.g. local-file file:// refs).
+                    saved_containers = icechunk.Repository.open(storage).config.virtual_chunk_containers or {}
+                    for container in saved_containers.values():
+                        config.set_virtual_chunk_container(container)
+                    authorize = {prefix: None for prefix in set(prefixes) | set(saved_containers)}
                     repo = icechunk.Repository.open(
                         storage,
                         config=config,
@@ -895,7 +899,14 @@ def load_data(
                         )
                         config.set_virtual_chunk_container(container)
 
-                    authorize = {prefix: None for prefix in prefixes}
+                    # Preserve containers saved in the repo (e.g. local-file
+                    # file:// containers for prepared local GRIB references);
+                    # a fresh S3-only config would make those refs unreadable.
+                    saved_containers = icechunk.Repository.open(storage).config.virtual_chunk_containers or {}
+                    for container in saved_containers.values():
+                        config.set_virtual_chunk_container(container)
+
+                    authorize = {prefix: None for prefix in set(prefixes) | set(saved_containers)}
                     repo = icechunk.Repository.open(
                         storage,
                         config=config,
@@ -1140,8 +1151,23 @@ def save_data(
     # "Could not serialize object of type _HLGExprSequence". Use the local
     # threaded scheduler: the write stays self-contained in this worker and
     # prepared datasets are bounded by the request.
-    if data.chunks is not None:
-        data = data.compute(scheduler="threads")
+    # Combined multi-model datasets can carry inconsistent per-variable chunk
+    # shapes along shared dims; even .chunks raises on those, so unify first
+    # (no-op for numpy-backed data), then materialize.
+    data = data.unify_chunks()
+    if any(hasattr(v.data, "dask") for v in (data.variables.values() if isinstance(data, xr.Dataset) else [data.variable])):
+        # Bound the thread pool: the default ThreadPoolExecutor sizes itself to
+        # the CPU count, which on a large shared login node spawns ~1000 threads
+        # and can deadlock/GIL-thrash on a big materialization. A small fixed
+        # pool keeps the write stable and self-contained in this worker.
+        from concurrent.futures import ThreadPoolExecutor
+
+        import dask
+
+        n_workers = max(1, min(8, os.cpu_count() or 1))
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            with dask.config.set(pool=pool):
+                data = data.compute(scheduler="threads")
 
     # Clear variable and coordinate encodings to prevent write failures
     # from decode-only backend codecs (such as grib2io/Grib2SerializerCodec) when writing to Zarr.

@@ -1,7 +1,7 @@
 [
   {
     "dataset": "aeronet_obs",
-    "status": "retrieved",
+    "status": "cached",
     "store_path": "./zarr_stores/aeronet_obs_prep.zarr"
   },
   {
@@ -11,8 +11,7 @@
   },
   {
     "dataset": "gefs_model",
-    "status": "failed",
-    "store_path": "./zarr_stores/gefs_model_prep.zarr",
-    "error": "Workflow failed in 1 task(s): prep_save_gefs_model: [Errno 2] No such file or directory: 's3://noaa-gefs-pds/gefs.20250802/00/chem/pgrb2ap25/gefs.chem.t00z.a2d_0p25.f003.grib2'"
+    "status": "cached",
+    "store_path": "./zarr_stores/gefs_model_prep.zarr"
   }
 ]

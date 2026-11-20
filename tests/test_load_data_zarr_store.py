@@ -386,13 +386,15 @@ class TestLoadDataLogging:
         mock_session = MagicMock()
         mock_icechunk.Repository.open.return_value = mock_repo
         mock_repo.readonly_session.return_value = mock_session
+        mock_repo.config.virtual_chunk_containers = {}
         mock_session.store = "mock_store"
 
         with patch.dict("sys.modules", {"icechunk": mock_icechunk}), patch("xarray.open_zarr", return_value=mock_ds) as mock_open_zarr:
             res = self._call_load_data("existing_ice", "gefs", kwargs, mock_monetio)
 
         mock_icechunk.s3_storage.assert_called_once_with(bucket="repo", prefix=None, region="us-east-1")
-        mock_icechunk.Repository.open.assert_called_once()
+        # Two opens: a probe for the repo's saved containers, then the merged config.
+        assert mock_icechunk.Repository.open.call_count == 2
         assert mock_icechunk.Repository.open.call_args.kwargs["config"] is mock_icechunk.RepositoryConfig.return_value
         assert mock_icechunk.Repository.open.call_args.kwargs["authorize_virtual_chunk_access"] == {
             "s3://noaa-gefs-pds/": None,

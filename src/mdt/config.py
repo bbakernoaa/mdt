@@ -123,6 +123,10 @@ class ConfigParser:
         if allocation_cfg is not None:
             self._validate_allocation(allocation_cfg)
 
+        prep_allocation_cfg = execution_cfg.get("prep_allocation")
+        if prep_allocation_cfg is not None:
+            self._validate_prep_allocation(prep_allocation_cfg)
+
         prep_cfg = self.config.get("prep")
         if prep_cfg is not None:
             for key in ("store_dir", "summary_file"):
@@ -301,6 +305,32 @@ class ConfigParser:
         unknown = set(allocation_cfg) - set(int_keys) - set(str_keys) - {"prologue"}
         if unknown:
             raise ValueError(f"Configuration validation failed: unknown execution.allocation keys {sorted(unknown)}.")
+
+    @staticmethod
+    def _validate_prep_allocation(prep_cfg: Any) -> None:
+        """Validate execution.prep_allocation (single-task retrieval job sizing)."""
+        if not isinstance(prep_cfg, dict):
+            raise ValueError("Configuration validation failed: execution.prep_allocation must be a mapping.")
+        if "cpus" in prep_cfg:
+            cpus = prep_cfg["cpus"]
+            if isinstance(cpus, bool) or not isinstance(cpus, int) or cpus < 1:
+                raise ValueError(f"Configuration validation failed: execution.prep_allocation.cpus must be a positive integer, got {cpus!r}.")
+        str_keys = ("walltime", "account", "partition", "qos", "slurm_cluster", "memory", "python")
+        for key in str_keys:
+            if key in prep_cfg and prep_cfg[key] is not None:
+                if not isinstance(prep_cfg[key], str) or not prep_cfg[key]:
+                    raise ValueError(f"Configuration validation failed: execution.prep_allocation.{key} must be a non-empty string, got {prep_cfg[key]!r}.")
+        if "force" in prep_cfg and not isinstance(prep_cfg["force"], bool):
+            raise ValueError("Configuration validation failed: execution.prep_allocation.force must be a boolean.")
+        for key in ("prologue", "extra_directives"):
+            if key in prep_cfg:
+                value = prep_cfg[key]
+                if not isinstance(value, list) or any(not isinstance(line, str) for line in value):
+                    raise ValueError(f"Configuration validation failed: execution.prep_allocation.{key} must be a list of strings.")
+        allowed = {"cpus", "force", "prologue", "extra_directives", *str_keys}
+        unknown = set(prep_cfg) - allowed
+        if unknown:
+            raise ValueError(f"Configuration validation failed: unknown execution.prep_allocation keys {sorted(unknown)}.")
 
     def _validate_region_masking(self) -> None:
         """Validate mask and regions configuration."""

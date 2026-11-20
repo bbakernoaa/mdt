@@ -291,12 +291,16 @@ def run_prep(config: "ConfigParser", force: bool = False) -> List[Dict[str, Any]
     from mdt.dask_engine import DaskEngine
 
     prep_config = _copy.deepcopy(config)
+    # Retrieval is network-bound, so a couple of modest workers suffice. Bound
+    # threads and give an explicit memory limit: the default "auto" limit on a
+    # large shared login node is tiny relative to the machine and causes
+    # premature memory pressure / thrashing during large materializations.
     prep_config.config["execution"] = {
         "orchestrator": "dask",
         "default_cluster": "compute",
         "clusters": {
-            "compute": {"mode": "local", "workers": 2},
-            "service": {"mode": "local", "workers": 1},
+            "compute": {"mode": "local", "workers": 2, "threads_per_worker": 2, "memory_limit": "8GB"},
+            "service": {"mode": "local", "workers": 1, "threads_per_worker": 2, "memory_limit": "8GB"},
         },
     }
     dag = DAGBuilder(prep_config).build_prep_dag()
@@ -366,6 +370,12 @@ def check_caches(config: "ConfigParser", dag: "nx.DiGraph") -> None:
 
     Used by allocation-mode execution (research.md R5). Raises RuntimeError
     listing all offending datasets with the ``mdt prep`` instruction.
+
+    A ``complete`` manifest with a matching fingerprint but partial date
+    coverage is accepted with a warning: prep already attempted retrieval
+    and recorded the gap (e.g. the source genuinely lacks those dates), and
+    pairing only matches overlapping times. Missing stores, incomplete
+    manifests, and config drift still fail hard.
     """
     problems: List[str] = []
     for node_id, attrs in dag.nodes(data=True):
@@ -378,16 +388,23 @@ def check_caches(config: "ConfigParser", dag: "nx.DiGraph") -> None:
         manifest = PrepManifest.load_for_store(store_path)
         if manifest is None:
             problems.append(f"{name}: no prepared store at '{store_path}'")
-        elif not manifest.covers(fingerprint, requested):
-            reasons = []
-            if manifest.status != "complete":
-                reasons.append(f"status={manifest.status}")
-            if manifest.config_fingerprint != fingerprint:
-                reasons.append("configuration changed since prep")
-            missing = set(requested) - set(manifest.covered_dates)
-            if missing:
-                reasons.append(f"missing dates {sorted(missing)}")
-            problems.append(f"{name}: store '{store_path}' not usable ({'; '.join(reasons)})")
+            continue
+        if manifest.status != "complete":
+            problems.append(f"{name}: store '{store_path}' not usable (status={manifest.status})")
+            continue
+        if manifest.config_fingerprint != fingerprint:
+            problems.append(f"{name}: store '{store_path}' not usable (configuration changed since prep)")
+            continue
+        missing = set(requested) - set(manifest.covered_dates)
+        if missing:
+            logger.warning(
+                "Dataset '%s': prepared store covers %d/%d requested dates; missing %s "
+                "(recorded at prep time). Proceeding with available coverage.",
+                name,
+                len(manifest.covered_dates),
+                len(requested),
+                sorted(missing),
+            )
     if problems:
         raise RuntimeError(
             "Prepared data missing or incomplete for offline execution:\n  - "

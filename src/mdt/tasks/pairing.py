@@ -176,6 +176,25 @@ def pair_data(
         source_xr = _drop_duplicate_time_entries(source_data, name, "source")
         target_data = _drop_duplicate_time_entries(target_data, name, "target")
 
+        # Regridding requires consistent chunks along shared dimensions. Zarr
+        # stores can carry different on-disk chunk shapes per variable (e.g.
+        # data chunked along time while promoted time coordinates are not),
+        # which xarray rejects with "inconsistent chunks along dimension ...".
+        # Note: even the .chunks property raises on such datasets, so unify
+        # unconditionally (a no-op for numpy-backed or already-consistent data).
+        source_xr = source_xr.unify_chunks()
+        target_data = target_data.unify_chunks()
+
+        # AXIS horizontal regridding requires each spatial core dimension to be
+        # a single Dask chunk. Prepared zarr stores may be spatially chunked;
+        # collapse non-time dimensions to single chunks, keeping time chunked
+        # as the independent batch dimension.
+        if any(hasattr(v.data, "dask") for v in source_xr.variables.values()):
+            time_dims = {"time", "valid_time", "validdate", "date", "dates"}
+            spatial_chunks = {d: -1 for d in source_xr.dims if str(d).lower() not in time_dims}
+            if spatial_chunks:
+                source_xr = source_xr.chunk(spatial_chunks)
+
         # Use the unified monet.pair interface
         # Preserve xarray inputs through pairing to maintain Aero Protocol laziness.
         paired_data = monet.util.combinetool.pair(source_xr, target_data, method=method, **kwargs)

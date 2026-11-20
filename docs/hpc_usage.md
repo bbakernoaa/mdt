@@ -87,14 +87,24 @@ For NOAA-style fixed compute allocations (a set block of nodes/CPUs, often netwo
 
 ### Stage 1 — Prepare data (`mdt prep`)
 
-Run where external data access exists (a DTN or service node):
+Run where external data access exists (a DTN or service node), either interactively:
 
 ```bash
 mdt prep docs/examples/gefs_aeronet_gaea_prep.yaml
 ```
 
+or as a batch job on a DTN (sized from `execution.prep_allocation`; the Gaea
+example defaults to the dtn QoS 4-CPU/job cap):
+
+```bash
+mdt script docs/examples/gefs_aeronet_gaea_prep.yaml --stage prep -o run_prep.slurm
+sbatch run_prep.slurm
+```
+
 - Executes only the data-retrieval/preparation stages; pairing, statistics and plots never run here.
-- Persists every dataset to icechunk/zarr stores on shared storage with a completeness manifest (`<store>.mdt-prep.json`).
+- **Storage policy**: remote sources (S3/web) are downloaded and materialized as real local zarr data — the compute stage never touches the remote source. Local sources (files already on shared storage) use icechunk *virtual references* (byte-range pointers, no copy) when a `zarr_store` with `backend: icechunk` is configured.
+- Persists every dataset with a completeness manifest (`<store>.mdt-prep.json`).
+- Local-file icechunk references require the monetio fix from branch `fix/local-file-icechunk-containers` (bbakernoaa/monetio, PR pending); until it lands upstream, `scripts/patch_monetio_local_icechunk.py` applies the same change to an installed monetio.
 - Idempotent: complete stores covering the requested dates are reused (`cached`); `--force` re-retrieves everything.
 - Interrupt-safe: an interrupted store stays `incomplete` and is re-prepared on the next run, never served as a complete cache.
 - Prep runs on local Dask workers at the launch point regardless of the configured compute clusters. On Gaea DTNs, remember the `dtn` QoS 4-CPU-per-job cap when launching prep itself as a batch job.
@@ -104,9 +114,14 @@ mdt prep docs/examples/gefs_aeronet_gaea_prep.yaml
 Generate and submit the allocation script:
 
 ```bash
-mdt script docs/examples/gefs_aeronet_gaea_prep.yaml -o run_analysis.slurm
+mdt script docs/examples/gefs_aeronet_gaea_prep.yaml --stage compute -o run_analysis.slurm
 sbatch run_analysis.slurm
 ```
+
+Sizing: the Gaea example requests one full C6 node — `ntasks_per_node: 48`,
+`cpus_per_task: 4` → 46 Dask worker processes (tasks 0/1 are scheduler/client).
+Prefer many small workers over few large ones (one GIL per process). Scale out
+with `nodes: N`; only constraint is total tasks ≥ 3.
 
 The script requests the resources in `execution.allocation` and runs `srun -n <ntasks> python -m mdt.allocation <config>`. Inside the allocation, dask-jobqueue's **SLURMRunner** bootstraps the whole workload: task 0 = Dask scheduler, task 1 = client (executes the DAG), remaining tasks = workers — coordinated through a `scheduler-<jobid>.json` file on shared storage. **Zero additional batch jobs are submitted**, and all loads are served from the prepared stores; a missing/incomplete store fails fast with a message naming the dataset and pointing back to `mdt prep`.
 

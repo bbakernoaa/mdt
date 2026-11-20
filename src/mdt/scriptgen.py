@@ -1,9 +1,14 @@
-"""SLURM allocation-script generation (feature 001-prep-fixed-allocation, US3).
+"""SLURM batch-script generation (feature 001-prep-fixed-allocation, US3).
 
-Renders a deterministic, ready-to-submit batch script from the workflow's
-``execution.allocation`` section (contracts/cli.md `mdt script`). The script
-requests the fixed allocation and bootstraps the whole Dask workload inside
-it via ``srun python -m mdt.allocation`` — no per-worker job submissions.
+Renders deterministic, ready-to-submit batch scripts from the workflow
+configuration (contracts/cli.md `mdt script`):
+
+- ``--stage compute`` (default): requests the fixed allocation from
+  ``execution.allocation`` and bootstraps the whole Dask workload inside it
+  via ``srun python -m mdt.allocation`` — no per-worker job submissions.
+- ``--stage prep``: a single-task retrieval job for a node with data access
+  (head/service node or DTN), sized from ``execution.prep_allocation`` or
+  conservative defaults. Gaea DTN defaults respect the dtn QoS 4-CPU/job cap.
 """
 
 from __future__ import annotations
@@ -14,6 +19,60 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from mdt.config import ConfigParser
+
+
+def render_prep_script(config: "ConfigParser", config_path: str) -> str:
+    """Render the prep-stage batch script (pure, deterministic, no side effects).
+
+    Resources come from ``execution.prep_allocation`` when present, otherwise
+    from conservative single-task defaults appropriate for a DTN/service node
+    (4 CPUs honors the Gaea dtn QoS per-job cap). Site directives fall back to
+    ``execution.allocation`` values (account, python, prologue) when set.
+    """
+    exec_cfg = config.execution
+    prep_cfg = exec_cfg.get("prep_allocation") or {}
+    allocation = exec_cfg.get("allocation") or {}
+
+    cpus = int(prep_cfg.get("cpus", 4))
+    walltime = prep_cfg.get("walltime", "04:00:00")
+    account = prep_cfg.get("account") or allocation.get("account")
+    if not account:
+        raise ValueError(
+            "Prep script generation requires an account: set execution.prep_allocation.account "
+            "or execution.allocation.account."
+        )
+    python = prep_cfg.get("python") or allocation.get("python") or sys.executable
+    prologue = list(prep_cfg.get("prologue") or allocation.get("prologue") or [f"cd {Path.cwd()}"])
+    force = bool(prep_cfg.get("force", False))
+    abs_config = Path(config_path).resolve()
+
+    lines = [
+        "#!/bin/bash",
+        "#SBATCH -J mdt-prep",
+        "#SBATCH -N 1",
+        "#SBATCH -n 1",
+        f"#SBATCH --cpus-per-task={cpus}",
+        f"#SBATCH -t {walltime}",
+        f"#SBATCH -A {account}",
+    ]
+    memory = prep_cfg.get("memory")
+    if memory:
+        lines.append(f"#SBATCH --mem={memory}")
+    if prep_cfg.get("partition"):
+        lines.append(f"#SBATCH -p {prep_cfg['partition']}")
+    if prep_cfg.get("qos"):
+        lines.append(f"#SBATCH --qos={prep_cfg['qos']}")
+    if prep_cfg.get("slurm_cluster"):
+        lines.append(f"#SBATCH -M {prep_cfg['slurm_cluster']}")
+    for directive in prep_cfg.get("extra_directives") or []:
+        lines.append(f"#SBATCH {directive}")
+    lines.append("")
+    lines.extend(prologue)
+    lines.append("")
+    force_flag = " --force" if force else ""
+    lines.append(f"{python} -m mdt prep {abs_config}{force_flag}")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def render_allocation_script(config: "ConfigParser", config_path: str) -> str:

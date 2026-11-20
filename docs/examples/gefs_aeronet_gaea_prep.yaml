@@ -27,7 +27,7 @@ data:
     type: "gefs"
     kwargs:
       start_date: "2025-08-01"
-      end_date: "2025-08-05"
+      end_date: "2025-08-31"
       product: "aerosol"
       lead_time: [0, 3, 6, 9, 12, 15, 18, 21]
       filters:
@@ -37,6 +37,27 @@ data:
     # local zarr (./zarr_stores/gefs_model_prep.zarr). The compute stage
     # never touches S3. No zarr_store/icechunk references needed here.
 
+  gcafs_met_model:
+    type: "gefs"
+    kwargs:
+      files: /gpfs/f6/bil-fire3/scratch/Barry.Baker/tmp/gefs*/12/chem/pgrb2ap25/*.grib2
+      filters:
+        typeOfFirstFixedSurface: 10
+        shortName: "totAOD550"
+      sel:
+        lead_time: [0, 3, 6, 9, 12, 15, 18, 21]
+    # LOCAL source (files already on shared GPFS): prep creates icechunk
+    # VIRTUAL REFERENCES (byte-range pointers into the original files) — no
+    # decode/copy of the data. The compute stage reads through the references
+    # on demand. Icechunk references are only used for local files; remote
+    # data is always materialized as real local zarr.
+    zarr_store:
+      enabled: true
+      backend: "icechunk"
+      icechunk_url: "./zarr_stores/gcafs_aerosol_icechunk"
+      max_scan_attempts: 5
+      network_timeout: 300.0
+      max_concurrent_requests: 4
   gcafs_model:
     type: "gefs"
     kwargs:
@@ -63,9 +84,9 @@ data:
     type: "aeronet"
     kwargs:
       start_date: "2025-08-01"
-      # End at 08-03: the AERONET web service lags ~2 days, so later dates are
-      # not retrievable yet; requesting them leaves a permanent coverage gap.
-      end_date: "2025-08-03"
+      # Inclusive date range. (Historical AERONET data are fully available;
+      # the reader covers the last requested day inclusively.)
+      end_date: "2025-08-31"
       n_chunks: 4
       retries: 8
       backoff_factor: 1.5
@@ -95,15 +116,39 @@ combine:
     dim: "model"
 
 statistics:
+  # Statistics run once per entry along the 'model' dimension, so both GEFS
+  # and GCAFS get the full metric suite. Results are written to a single
+  # combined table (gefs_gcafs_aeronet_stats.md) with one column per model,
+  # labeled by the pairing name (pair_gefs_aeronet, pair_gcafs_aeronet).
   aod_stats:
     input: "model_comparison"
-    metrics: ["rmse", "mb", "mae", "r2", "ioa_m", "fac2"]
+    metrics: ["rmse", "mb", "mae", "mse", "mape", "ioa_m", "fac2", "r2", "d1", "e1", "ac", "fss", "vets", "wassersteindistance"]
     kwargs:
       obs_var: "aod_550nm"
       mod_var: "totAOD550"
       savename: "gefs_gcafs_aeronet_stats.md"
 
 plots:
+  # Maps cannot overlay two models meaningfully, so this renders as a facet
+  # grid: one bias-map panel per model with shared color limits.
+  spatial_aod:
+    input: "model_comparison"
+    type: "spatial_bias_scatter"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_spatial.png"
+      title: "GEFS and GCAFS vs AERONET AOD Bias"
+      style: "pivotal_weather"
+      discrete: false
+      cbar_label: "AOD Bias (Model - Obs)"
+      col1: "aod_550nm"
+      col2: "totAOD550"
+      fact: 0.2
+      vmin: -0.5
+      vmax: 0.5
+      col_wrap: 2
+
+  # Scatter, timeseries and Taylor classes accept several model variables,
+  # so both models are drawn on one shared axis per figure.
   scatter_aod:
     input: "model_comparison"
     type: "scatter"
@@ -112,14 +157,41 @@ plots:
       var1: "aod_550nm"
       var2: "totAOD550"
       title: "GEFS and GCAFS vs AERONET AOD"
+      edgecolors: 'black'
+      linewidths: 0.1
+      alpha: 0.7
+
+  timeseries_bias:
+    input: "model_comparison"
+    type: "timeseriesstat"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_timeseries_bias.png"
+      title: "GEFS and GCAFS vs AERONET AOD Bias"
+      var1: "aod_550nm"
+      var2: "totAOD550"
+      freq: "3h"
+
+  timeseries_rmse:
+    input: "model_comparison"
+    type: "timeseriesstat"
+    kwargs:
+      savename: "gefs_gcafs_aeronet_timeseries_rmse.png"
+      title: "GEFS and GCAFS vs AERONET AOD RMSE"
+      var1: "aod_550nm"
+      var2: "totAOD550"
+      freq: "3h"
+      stat: "rmse"
+      markersize: 1
 
   taylor:
     input: "model_comparison"
     type: "taylor"
     kwargs:
       savename: "gefs_gcafs_aeronet_taylor.png"
+      title: "GEFS and GCAFS vs AERONET AOD"
       col1: "aod_550nm"
       col2: "totAOD550"
+      label1: "AERONET AOD"
 
 save:
   save_model_comparison:
@@ -132,10 +204,29 @@ execution:
   # Slingshot HSN: the front-end network does not carry arbitrary TCP ports
   # between node classes on Gaea (verified); scheduler/workers use hsn0.
   dask_interface: "hsn0"
+  # Stage-1 retrieval job (mdt script --stage prep): single task on a DTN.
+  # 4 CPUs honors the Gaea dtn QoS per-job cap; qos=dtn avoids compute
+  # fairshare cost. Omit this section to run prep interactively instead.
+  prep_allocation:
+    cpus: 4
+    walltime: "02:00:00"
+    account: "bil-fire3"
+    partition: "dtn_f5_f6"
+    qos: "dtn"
+    slurm_cluster: "es"           # DTNs live on the 'es' SLURM cluster
+    extra_directives:
+      - "--constraint=f6"         # route to dtn01-09 with /gpfs/f6 mounted
+    python: "/gpfs/f6/bil-fire3/world-shared/python/envs/mdt/bin/python"
+    prologue:
+      - "cd /gpfs/f6/bil-fire3/scratch/Barry.Baker/python/mdt"
   allocation:
     nodes: 1
-    ntasks_per_node: 4          # 1 scheduler + 1 client + 2 workers
-    cpus_per_task: 8
+    # One full C6 node (192 cores): 48 tasks x 4 cores. Tasks 0/1 are the
+    # scheduler/client; the remaining 46 are Dask worker processes, each with
+    # 4 threads (many small workers beat few huge ones: one GIL per process).
+    # Scale out with nodes: N (ntasks_per_node stays 48).
+    ntasks_per_node: 48
+    cpus_per_task: 4
     # memory omitted: Gaea c6 SLURM does not configure consumable memory
     # (RealMemory=1); --mem requests are rejected there. Set it on sites
     # where memory is a schedulable resource.
